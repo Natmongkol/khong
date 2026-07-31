@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0e1a">
+<title>โน้ตดนตรีไทย ทำนองหลัก</title>
+
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="title-row" style="justify-content: center;">
+    <h1 id="mainTitle">โน้ตดนตรีไทย ทำนองหลัก</h1>
+  </div>
+</header>
+
+<main style="padding-top: 20px;">
+  
+  <!-- Instrument Selector Dropdown -->
+  <div class="inst-dropdown-wrap" style="text-align: center; margin-bottom: 20px;">
+    <select id="instSelect" class="inst-select">
+      <option value="kwy">◉ เครื่องดนตรี: ฆ้องวงใหญ่</option>
+      <option value="kmwy">◉ เครื่องดนตรี: ฆ้องมอญวงใหญ่</option>
+    </select>
+  </div>
+
+  <div class="save-panel" style="margin-bottom: 20px; border-radius: 12px;">
+    <div class="save-panel-row">
+      <span class="save-badge ls" id="saveBadge">localStorage</span>
+      <span class="save-file-name" id="saveFileName">—</span>
+      <span class="autosave-status" id="autosaveStatus">—</span>
+      <div class="save-actions">
+        <button class="btn save-now" id="saveNowBtn">💾 Save</button>
+        <button class="btn save-file" id="saveFileBtn" style="display:none">📂 Save ทับไฟล์</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel">
+    <h2>Controls</h2>
+    <h3>ควบคุมการเล่นและบันทึก</h3>
+    
+    <div class="controls" style="margin-bottom: 12px;">
+      <div class="control-group" style="width: 100%; border-right: none;">
+        <input type="text" id="songName" class="song-input" placeholder="ชื่อเพลง..." autocomplete="off">
+      </div>
+    </div>
+    
+    <div class="controls" style="margin-bottom: 16px;">
+      <div class="control-group" style="border:none; padding:0; gap: 10px;">
+        <input type="number" id="bpm" class="tempo-input" min="30" max="300" value="200" inputmode="numeric" title="Tempo (BPM)">
+        <span class="control-label">bpm</span>
+        <span class="control-label" style="color:var(--border); font-size:14px;">|</span>
+        <input type="number" id="numVak" class="tempo-input" min="1" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
+        <span class="control-label">บรรทัด</span>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <div class="control-group" style="border:none; padding:0; width:100%; gap: 8px; flex-wrap: wrap;">
+        <!-- Record toggle — ไม่มี label -->
+        <button class="toggle on" id="recordToggle" role="switch" aria-checked="true" aria-label="เปิด/ปิดโหมดบันทึก" title="Record">
+          <span class="toggle-track"><span class="toggle-knob"></span></span>
+        </button>
+
+        <!-- Play / Stop -->
+        <button class="btn btn-icon primary" id="playBtn" aria-label="เล่นเพลง" title="เล่น">▶</button>
+        <button class="btn btn-icon" id="stopBtn" aria-label="หยุดเล่น" title="หยุด">■</button>
+
+        <!-- Auto-scroll -->
+        <label class="toggle" style="cursor: pointer;" title="เลื่อนอัตโนมัติ">
+          <input type="checkbox" id="autoScrollToggle" checked style="accent-color: var(--accent); margin:0;">
+          <span style="font-size: 10px; color: var(--muted); margin-left: 2px; font-weight: 600;">เลื่อน</span>
+        </label>
+
+        <!-- Undo / Redo -->
+        <button class="btn btn-icon" id="undoBtn" disabled aria-label="ย้อนกลับ" title="ย้อนกลับ">↩</button>
+        <button class="btn btn-icon" id="redoBtn" disabled aria-label="ถัดไป" title="ถัดไป">↻</button>
+
+        <!-- Clear -->
+        <button class="btn btn-icon danger" id="clearBtn" aria-label="ล้างทั้งหมด" title="ล้างทั้งหมด">✕</button>
+
+        <!-- Import / Export dropdowns -->
+        <div class="dropdown" style="margin-left: auto;">
+          <button class="btn btn-icon" id="importMainBtn" title="นำเข้า">⬇ นำเข้า ▾</button>
+          <div class="dropdown-menu" id="importMenu">
+            <button class="dropdown-item" id="importJsonBtn">📄 ไฟล์โปรเจกต์ (.JSON)</button>
+            <button class="dropdown-item" id="importTxtBtn">📝 ไฟล์ข้อความ (.TXT)</button>
+            <button class="dropdown-item" id="importPdfBtn">📥 ตารางโน้ตจาก .PDF</button>
+          </div>
+        </div>
+        <div class="dropdown">
+          <button class="btn btn-icon export-btn" id="exportMainBtn" title="ส่งออก">⬆ ส่งออก ▾</button>
+          <div class="dropdown-menu" id="exportMenu">
+            <button class="dropdown-item" id="exportMenuMp3">🎵 ไฟล์เสียง (.MP3)</button>
+            <button class="dropdown-item" id="exportMenuJson">📄 ไฟล์โปรเจกต์ (.JSON)</button>
+            <button class="dropdown-item" id="exportMenuTxt">📝 ไฟล์ข้อความ (.TXT)</button>
+            <button class="dropdown-item" id="exportMenuPdf">🖨️ ตารางโน้ต (.PDF)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section-spacer" style="height:10px"></div>
+    <div class="stats" id="statsContainer">
+      <div class="stat" style="display:none;"><span class="value" id="cursorValue"></span></div>
+      <div class="stat" style="display:none;"><span class="value" id="beatValue"></span></div>
+      <div class="stat"><span class="label">โครงสร้างท่อน</span><span class="value" id="sectionCount">1 ท่อน</span></div>
+    </div>
+  </section>
+
+  <div class="section-spacer"></div>
+
+  <section class="panel">
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <h2>Instrument</h2>
+        <h3 id="instPanelTitle" style="margin:0;">ฆ้องวงใหญ่ · 16 ลูก</h3>
+      </div>
+      <button class="btn" id="focusModeBtn" style="background: rgba(181,101,47,0.1); border-color: var(--accent); color: var(--accent); font-weight: bold; border-radius: 20px; padding: 6px 16px;">
+        <span style="font-size: 16px; vertical-align: middle;">👁️</span> โหมดรับชม
+      </button>
+    </div>
+    
+    <!-- Stage Container: เพื่อให้ดึง stage กลับมาไว้ที่เดิมได้ -->
+    <div id="gongStageContainer">
+        <!-- Stage: วงฆ้อง (ใช้รวมกันทั้งวงใหญ่และมอญวงใหญ่ โดยปรับรูปร่างอัตโนมัติ) -->
+        <div class="gong-stage" id="gong-stage"></div>
+    </div>
+  </section>
+
+  <div class="section-spacer"></div>
+
+  <section class="panel">
+    <h3 id="notationSubtitle" style="margin:0 0 12px;">ทางฆ้องวงใหญ่</h3>
+    <div class="playback-bar-wrap"><div class="playback-bar-fill" id="playbackBar"></div></div>
+    <div style="height:10px"></div>
+    <div class="notation-wrapper">
+      <div class="notation" id="notation"></div>
+    </div>
+    <div class="legend">
+      <div class="legend-item">เสียงต่ำ มีจุดด้านล่าง (เช่น มฺ)</div>
+      <div class="legend-item">เสียงสูง มีจุดด้านบน (เช่น ดํ)</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--dim)"></span>หยุด (rest, −)</div>
+    </div>
+  </section>
+  
+  <div class="section-spacer"></div>
+  
+  <section class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none;" id="toggleManualWrap">
+       <h2 style="margin:0;">คู่มือการใช้งาน / ระบบคีย์บอร์ด</h2>
+       <button class="btn" id="toggleManualBtn">📖 คู่มือ ▼</button>
+    </div>
+    
+    <div id="manualContent" style="display:none; margin-top:16px;">
+      <div class="help-text">
+        ตรวจสอบให้แน่ใจว่าได้เปิดโหมด <strong>Record</strong> ไว้แล้ว คุณสามารถพิมพ์โน้ตลงไปในช่องตาราง (เคอร์เซอร์สีฟ้า) 
+        โดยใช้แป้นพิมพ์ของคอมพิวเตอร์ หรือแป้นพิมพ์สัมผัสบนมือถือ
+        
+        <div id="imeInfographic" class="ime-infographic"></div>
+        
+        <table class="help-table">
+          <tbody>
+            <tr>
+              <td>iPad / มือถือ (Touch)</td>
+              <td><strong>แตะ 1 ครั้ง</strong> เพื่อเลือกห้องและเปิดเมนู · <strong>แตะ 2 ครั้ง (Double Tap)</strong> เพื่อเข้าโหมดแก้ไขโน้ต</td>
+            </tr>
+            <tr>
+              <td><kbd>Tab</kbd> + ปุ่มโน้ต</td>
+              <td><strong>ระบบคู่ 8</strong> — สร้างคอร์ดคู่ 8 โดยโน้ตต่ำจะลงมือซ้าย และโน้ตสูงจะลงมือขวาอัตโนมัติ</td>
+            </tr>
+            <tr>
+              <td><kbd>Shift</kbd> + ปุ่มโน้ต</td>
+              <td><strong>ระบบคู่ 4</strong> — สร้างคอร์ดคู่ 4 (โน้ตหลักที่กดจะเป็นตัวบน และสร้างตัวล่างที่ห่างลงไป 3 เสียง)</td>
+            </tr>
+            <tr>
+              <td><kbd>↑</kbd> / <kbd>↓</kbd> + ปุ่มโน้ต</td>
+              <td><strong>บังคับมือขวา / มือซ้าย</strong> — กดลูกศรขึ้นหรือลงค้างไว้แล้วกดปุ่มโน้ต</td>
+            </tr>
+            <tr>
+              <td><kbd>Space</kbd></td>
+              <td><strong>โหมดปกติ:</strong> เล่น / หยุดเพลง <br><strong>โหมดแก้ไขโน้ต:</strong> ใส่เครื่องหมาย <strong>(หยุด)</strong> และเลื่อนเคอร์เซอร์</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="touch-sel-menu hidden" id="cellActionMenu">
+  <button class="tsm-btn tsm-play" id="camPlay"><span class="tsm-icon">▶</span>เล่น</button>
+  <button class="tsm-btn" id="camEdit"><span class="tsm-icon">✎</span>แก้ไข</button>
+  <button class="tsm-btn" id="camCopy"><span class="tsm-icon">⎘</span>คัดลอก</button>
+  <button class="tsm-btn" id="camPaste" disabled><span class="tsm-icon">📋</span>วาง</button>
+  <button class="tsm-btn" id="camMulti"><span class="tsm-icon">☑</span>เลือก</button>
+  <button class="tsm-btn" id="camDecBar"><span class="tsm-icon">−</span>ลดห้อง</button>
+  <button class="tsm-btn" id="camIncBar"><span class="tsm-icon">+</span>เพิ่มห้อง</button>
+  <button class="tsm-btn tsm-del" id="camDel"><span class="tsm-icon">⌫</span>ลบ</button>
+</div>
+<div class="touch-sel-menu hidden" id="cellEditMenu">
+  <button class="tsm-btn tsm-play" id="cemOk" style="flex: 1 1 100%; border-right: none;"><span class="tsm-icon">✓</span>ตกลง (ปิดโหมดพิมพ์)</button>
+</div>
+<div class="touch-sel-menu hidden" id="lineActionMenu">
+  <button class="tsm-btn" id="lamCopy"><span class="tsm-icon">⎘</span>คัดลอก</button>
+  <button class="tsm-btn" id="lamPaste" disabled><span class="tsm-icon">📋</span>วาง</button>
+  <button class="tsm-btn" id="lamMultiLine"><span class="tsm-icon">☑</span>เลือกหลาย</button>
+  <button class="tsm-btn" id="lamCancel"><span class="tsm-icon">✕</span>ยกเลิก</button>
+</div>
+<div id="multiLineActionMenu" class="hidden">
+  <button class="tsm-btn" id="mlmCopy"><span class="tsm-icon">⎘</span>คัดลอกทั้งหมด</button>
+  <button class="tsm-btn tsm-del" id="mlmClear"><span class="tsm-icon">⌫</span>ล้างทั้งหมด</button>
+  <button class="tsm-btn tsm-play" id="mlmPlay"><span class="tsm-icon">▶</span>เล่นที่เลือก</button>
+  <button class="tsm-btn" id="mlmCancel"><span class="tsm-icon">✕</span>ยกเลิก</button>
+</div>
+<div class="touch-sel-menu hidden" id="multiSelectActionMenu" style="top: auto; bottom: 80px; left: 50%; transform: translateX(-50%); box-shadow: 0 10px 40px rgba(0,0,0,0.6);">
+  <button class="tsm-btn" id="msmCopy"><span class="tsm-icon">⎘</span>คัดลอก</button>
+  <button class="tsm-btn" id="msmPaste" disabled><span class="tsm-icon">📋</span>วาง</button>
+  <button class="tsm-btn tsm-play" id="msmPlay"><span class="tsm-icon">▶</span>เล่นซ้ำ</button>
+  <button class="tsm-btn" id="msmCancel"><span class="tsm-icon">✕</span>ยกเลิก</button>
+</div>
+
+<!-- Gong Popup Overlay -->
+<div id="gongPopupOverlay">
+  <div id="gongPopupLabel">👁️ ดูวงฆ้อง — แตะลูกฆ้องเพื่อเล่น</div>
+  <div id="gongPopupStage"></div>
+  <button id="gongPopupClose" title="ปิด (Esc)">✕</button>
+</div>
+
+<!-- Quick Nav: ปุ่มลอยด้านขวา (ปุ่มเดียว toggle) -->
+<!-- AssistiveTouch-style Quick Nav: ลากได้ทุกจุด, snap ขอบจอ, จางเมื่อ idle -->
+<div id="quickNav">
+  <div id="qnavDragBar" aria-hidden="true"></div><!-- hidden — ไม่ใช้แล้ว แต่เก็บ id ไว้ไม่ให้ JS error -->
+  <button id="qnavToggle" aria-label="ไปวงฆ้อง / กลับบรรทัดที่บันทึก">
+    <span id="qnavIcon">👁️</span>
+    <span class="qnav-tooltip" id="qnavTooltip">ไปดูวงฆ้อง</span>
+  </button>
+</div>
+
+<!-- Touch Keyboard -->
+<div class="touch-keyboard" id="touchKeyboard">
+  <div class="tk-label" style="display:flex; justify-content:space-between; align-items:center;">
+    <span id="tk-title">⌨️ แป้นพิมพ์โน้ต</span>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="tk-toggle-btn" id="tkCollapsedStop" style="display:none; background:rgba(255,94,122,0.12); border-color:var(--red); color:var(--red);">■ หยุด</button>
+      <button class="tk-toggle-btn" id="tkToggleBtn">▼ ซ่อน</button>
+    </div>
+  </div>
+  
+  <div class="tk-playback-row">
+    <div class="tk-action play" id="tkPlayMain" style="flex:3;">▶ เล่นเพลง</div>
+    <div class="tk-action stop" id="tkStopMain" style="flex:2;">■ หยุด</div>
+    <div class="tk-action undo" id="tkUndoBtn" style="flex:1;">↩</div>
+    <div class="tk-action redo" id="tkRedoBtn" style="flex:1;">↻</div>
+  </div>
+
+  <div class="tk-modifier-row">
+    <div class="tk-mod tab-mod"   id="tkModTab">  <span class="mod-key">Tab</span>  คู่ 8</div>
+    <div class="tk-mod shift-mod" id="tkModShift"><span class="mod-key">Shift</span>คู่ 4</div>
+    <div class="tk-mod up-mod"    id="tkModUp">   <span class="mod-key">↑</span>  มือขวา</div>
+    <div class="tk-mod down-mod"  id="tkModDown"> <span class="mod-key">↓</span>  มือซ้าย</div>
+  </div>
+  <div class="tk-mode-banner" id="tkModeBanner">แตะปุ่มด้านบนค้างไว้ แล้วกดโน้ต</div>
+
+  <!-- Keyboard: Khong Wong Yai -->
+  <div id="kb-kwy">
+      <div class="tk-row">
+        <div class="tk-note high" data-idx="12"><span class="tk-note-name">ด</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="13"><span class="tk-note-name">ร</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="14"><span class="tk-note-name">ม</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="15"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">สูง</span></div>
+      </div>
+      <div class="tk-row">
+        <div class="tk-note mid" data-idx="5"><span class="tk-note-name">ด</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="6"><span class="tk-note-name">ร</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="7"><span class="tk-note-name">ม</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="8"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="9"><span class="tk-note-name">ซ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="10"><span class="tk-note-name">ล</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="11"><span class="tk-note-name">ท</span><span class="tk-key-hint">กลาง</span></div>
+      </div>
+      <div class="tk-row">
+        <div class="tk-note low" data-idx="0"><span class="tk-note-name">ม</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="1"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="2"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="3"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="4"><span class="tk-note-name">ท</span><span class="tk-key-hint">ต่ำ</span></div>
+      </div>
+  </div>
+
+  <!-- Keyboard: Khong Mon Wong Yai -->
+  <div id="kb-kmwy" style="display:none;">
+      <div class="tk-row">
+        <!-- High: ดํ,รํ,มํ,ฟํ,ซํ,ลํ,ทํ -->
+        <div class="tk-note high" data-idx="8"><span class="tk-note-name">ด</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="9"><span class="tk-note-name">ร</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="10"><span class="tk-note-name">ม</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="11"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="12"><span class="tk-note-name">ซ</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="13"><span class="tk-note-name">ล</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="14"><span class="tk-note-name">ท</span><span class="tk-key-hint">สูง</span></div>
+      </div>
+      <div class="tk-row">
+        <!-- Mid: ด,ร,ม,ซ,ล,ท -->
+        <div class="tk-note mid" data-idx="2"><span class="tk-note-name">ด</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="3"><span class="tk-note-name">ร</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="4"><span class="tk-note-name">ม</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="5"><span class="tk-note-name">ซ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="6"><span class="tk-note-name">ล</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="7"><span class="tk-note-name">ท</span><span class="tk-key-hint">กลาง</span></div>
+      </div>
+      <div class="tk-row">
+        <!-- Low: ซฺ,ลฺ -->
+        <div class="tk-note low" data-idx="0"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="1"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำ</span></div>
+      </div>
+  </div>
+
+  <div class="tk-action-row">
+    <div class="tk-action left"  id="tkLeft">◀ ย้อน</div>
+    <div class="tk-action rest"  id="tkRest">− หยุด</div>
+    <div class="tk-action del"   id="tkDel">⌫ ลบ</div>
+    <div class="tk-action right" id="tkRight">เดิน ▶</div>
+    <div class="tk-action enter" id="tkEnter">+ วรรค</div>
+  </div>
+</div>
+
+<!-- Spacer สำรองพื้นที่ให้ Touch Keyboard แยกออกจาก body โดยตรง เพื่อลดอาการจอกระตุกบน iOS Safari -->
+<div id="kbSpacer"></div>
+
+<!-- Modal สำหรับ ยืนยันการลบ -->
+<div class="modal-overlay" id="clearConfirmModal">
+  <div class="modal-content">
+    <h3 class="modal-title">ยืนยันการล้างตารางทั้งหมด</h3>
+    <p class="modal-body">คุณต้องการลบโน้ตทั้งหมดและรีเซ็ตโครงสร้างตารางกลับไปเริ่มต้นใหม่หรือไม่? <br><em>(การกระทำนี้สามารถกู้คืนได้ด้วยปุ่ม ย้อนกลับ)</em></p>
+    <div class="modal-actions">
+      <button class="btn" id="cancelClearBtn">ยกเลิก</button>
+      <button class="btn danger" id="confirmClearBtn">ลบทันที</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สำหรับ ยืนยันการเปลี่ยนเครื่องดนตรี -->
+<div class="modal-overlay" id="switchInstModal">
+  <div class="modal-content">
+    <h3 class="modal-title">เปลี่ยนเครื่องดนตรี</h3>
+    <p class="modal-body">การเปลี่ยนเครื่องดนตรีจะทำการล้างตารางโน้ตปัจจุบัน เนื่องจากจำนวนลูกฆ้องและระดับเสียงไม่เท่ากัน คุณต้องการดำเนินการต่อหรือไม่?</p>
+    <div class="modal-actions">
+      <button class="btn" id="cancelSwitchBtn">ยกเลิก</button>
+      <button class="btn danger" id="confirmSwitchBtn">เปลี่ยนและล้างตาราง</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สำหรับ เลือกเล่นเป็นช่วง -->
+<div class="modal-overlay" id="playRangeModal">
+  <div class="modal-content" style="max-width: 450px;">
+    <h3 class="modal-title">▶ เลือกช่วงที่ต้องการเล่น</h3>
+    <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+       <div style="display:flex; flex-direction:column; gap:6px;">
+         <label style="font-size:12px; font-weight:600; color:var(--muted);">เริ่มตั้งแต่ท่อน:</label>
+         <select id="prStartSel" class="mp3-select"></select>
+       </div>
+       <div style="display:flex; flex-direction:column; gap:6px;">
+         <label style="font-size:12px; font-weight:600; color:var(--muted);">จนถึงสิ้นสุดท่อนที่:</label>
+         <select id="prEndSel" class="mp3-select"></select>
+       </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelPlayRangeBtn">ยกเลิก</button>
+      <button class="btn primary" id="confirmPlayRangeBtn">▶ เล่นเลย</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สำหรับ เลือกช่วงท่อน Export MP3 -->
+<div class="modal-overlay" id="exportMp3Modal">
+  <div class="modal-content" style="max-width: 450px;">
+    <h3 class="modal-title">🎵 ส่งออก MP3</h3>
+
+    <!-- ส่วนเลือกท่อน -->
+    <div id="exMp3SelectArea" style="display:flex; flex-direction:column; gap:16px;">
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:16px; padding:0;">
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--muted);">เริ่มตั้งแต่ท่อน:</label>
+          <select id="exMp3StartSel" class="mp3-select"></select>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--muted);">จนถึงสิ้นสุดท่อนที่:</label>
+          <select id="exMp3EndSel" class="mp3-select"></select>
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content: space-between; padding:0;">
+        <button class="btn" id="exportMp3FullBtn">ส่งออกทั้งหมด</button>
+        <div style="display: flex; gap: 12px;">
+          <button class="btn" id="cancelExportMp3Btn">ยกเลิก</button>
+          <button class="btn export-btn" id="confirmExportMp3Btn">⬇ สร้างไฟล์ MP3</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ส่วน Progress (ซ่อนไว้ก่อน) -->
+    <div id="exMp3ProgressArea" style="display:none; flex-direction:column; gap:12px;">
+
+      <!-- ข้อมูลเพลง -->
+      <div style="display:flex; justify-content:space-between; background:var(--panel-3); border-radius:8px; padding:10px 14px;">
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:10px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:3px;">ความยาวเพลง</div>
+          <div style="font-size:16px; font-weight:700; color:var(--gold); font-family:'SF Mono',monospace;" id="exMp3SongDuration">—</div>
+        </div>
+        <div style="width:1px; background:var(--border); margin:0 8px;"></div>
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:10px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:3px;">เวลาที่ผ่านไป</div>
+          <div style="font-size:16px; font-weight:700; color:var(--text); font-family:'SF Mono',monospace;" id="exMp3Elapsed">0:00</div>
+        </div>
+      </div>
+
+      <!-- สถานะ -->
+      <div style="text-align:center; font-size:13px; color:var(--text); font-weight:600;" id="exMp3StatusText">กำลังเตรียมข้อมูล...</div>
+
+      <!-- Progress bar -->
+      <div style="background:var(--panel-3); border-radius:8px; height:14px; overflow:hidden;">
+        <div id="exMp3ProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg,var(--purple),var(--accent)); border-radius:8px; transition:width 0.25s ease;"></div>
+      </div>
+
+      <!-- เปอร์เซ็น -->
+      <div style="text-align:center; font-size:26px; font-weight:700; color:var(--accent); font-family:'SF Mono',monospace;" id="exMp3PercentText">0%</div>
+
+      <div style="text-align:center; font-size:11px; color:var(--dim);">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== Modal: Import PDF ===== -->
+<div class="modal-overlay" id="importPdfOverlay">
+  <div class="modal-content" style="max-width:520px; width:92%;">
+    <h3 class="modal-title">📥 นำเข้าตารางโน้ตจาก PDF</h3>
+    <p class="modal-body" style="margin-bottom:16px; line-height:1.7;">
+      ระบบจะอ่านโน้ตไทยตามเครื่องดนตรีที่เลือก จาก PDF แล้วใส่ลงตารางโดยอัตโนมัติ<br>
+      <span style="font-size:12px;color:var(--dim);">รองรับ PDF ที่มี text layer (พิมพ์ได้/copy ได้) เช่น PDF ที่ส่งออกจากโปรแกรมโน้ต, Word, หรือระบบนี้</span>
+    </p>
+
+    <div id="pdfDropZone" style="
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 36px 20px; text-align: center; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: rgba(138,99,168,0.03);
+    ">
+      <div style="font-size:36px; margin-bottom:10px; pointer-events:none;">📄</div>
+      <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:4px; pointer-events:none;">คลิกเลือกไฟล์ หรือลากวางที่นี่</div>
+      <div style="font-size:12px; color:var(--muted); pointer-events:none;">รองรับ .PDF เท่านั้น</div>
+      <input type="file" id="pdfFileInput" accept=".pdf,application/pdf" style="display:none;">
+    </div>
+
+    <!-- Progress area -->
+    <div id="pdfImportProgress" style="display:none; margin-top:16px;">
+      <div style="background:var(--panel-3); border-radius:6px; height:6px; overflow:hidden; margin-bottom:8px;">
+        <div id="pdfProgressBar" style="height:100%; width:0%; background:var(--purple); border-radius:6px; transition:width 0.3s;"></div>
+      </div>
+      <div id="pdfProgressLabel" style="font-size:13px; color:var(--muted); text-align:center;">กำลังอ่าน PDF...</div>
+    </div>
+
+    <!-- Preview area -->
+    <div id="pdfImportPreview" style="display:none; margin-top:16px; max-height:180px; overflow-y:auto;
+      background:var(--panel-3); border:1px solid var(--border); border-radius:8px; padding:12px;">
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; margin-bottom:8px;">พรีวิวโน้ตที่อ่านได้</div>
+      <div id="pdfPreviewContent" style="font-family:monospace; font-size:13px; color:var(--text); line-height:1.8; word-break:break-all;"></div>
+    </div>
+
+    <div id="pdfImportError" style="display:none; margin-top:12px; padding:10px 14px;
+      background:rgba(255,94,122,0.08); border:1px solid rgba(255,94,122,0.3); border-radius:8px;
+      font-size:13px; color:var(--red);"></div>
+
+    <div class="modal-actions" style="margin-top:20px;">
+      <button class="btn" id="cancelPdfImportBtn">ยกเลิก</button>
+      <button class="btn primary" id="confirmPdfImportBtn" disabled>✓ นำเข้าโน้ต</button>
+    </div>
+  </div>
+</div>
+
+<!-- โหมดรับชม (Focus Overlay) -->
+<div class="focus-overlay" id="focusOverlay">
+  <div class="focus-header">
+    <button class="focus-back-btn" id="focusBackBtn"><span>🔙</span> กลับ</button>
+    <div style="flex:1; text-align:center; overflow:hidden;">
+      <div id="focusSongName" style="color:var(--text); font-weight:700; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;"></div>
+      <div id="focusInstName" style="color:var(--gold); font-weight:600; font-size:12px; opacity:0.85; margin-top:1px;">ฆ้องวงใหญ่</div>
+    </div>
+    <div style="width: 90px;"></div>
+  </div>
+  <div class="focus-body" id="focusBody">
+    <!-- กราฟิกวงฆ้องจะถูกดึงมาไว้ที่นี่เมื่อกดโหมดรับชม -->
+  </div>
+  <!-- Seek Bar Area -->
+  <div class="focus-seekbar-wrap" id="focusSeekbarWrap">
+    <!-- ป้ายตำแหน่ง -->
+    <div class="focus-seek-labels">
+      <span class="focus-seek-pos" id="focusSeekPos">—</span>
+      <span class="focus-seek-time" id="focusSeekTime">0:00</span>
+    </div>
+    <!-- แถบ seek -->
+    <div class="focus-seekbar" id="focusSeekbar">
+      <!-- section markers จะถูก inject ด้วย JS -->
+      <div class="focus-seek-track">
+        <div class="focus-seek-fill" id="focusSeekFill"></div>
+        <div class="focus-seek-thumb" id="focusSeekThumb"></div>
+      </div>
+      <!-- tooltip ขณะลาก -->
+      <div class="focus-seek-tooltip" id="focusSeekTooltip"></div>
+    </div>
+    <!-- legend ท่อน -->
+    <div class="focus-seek-sections" id="focusSeekSections"></div>
+  </div>
+
+  <div class="focus-controls">
+    <button class="focus-ctrl-btn" id="fcRewind" title="เล่นใหม่ตั้งแต่ต้น">⏮</button>
+    <button class="focus-ctrl-btn skip-btn" id="fcSkipBack" title="ย้อน 10 วินาที">−10s</button>
+    <button class="focus-ctrl-btn play-pause" id="fcPlayPause" title="เล่น / หยุด">▶</button>
+    <button class="focus-ctrl-btn skip-btn" id="fcSkipFwd" title="เดินหน้า 10 วินาที">+10s</button>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<footer>
+  © 2026 · Khong Wong & Khong Mon Notation System · v5.0
+</footer>
+
+<script src="js/lib/lamejs.js"></script>
+<script src="js/state.js"></script>
+<script src="js/ui-panels.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/editor-core.js"></script>
+<script src="js/notation-render.js"></script>
+<script src="js/io.js"></script>
+<script src="js/init.js"></script>
+</body>
+</html>
