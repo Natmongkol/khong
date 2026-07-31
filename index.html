@@ -42,68 +42,93 @@
   <section class="panel">
     <h2>Controls</h2>
     <h3>ควบคุมการเล่นและบันทึก</h3>
-    
-    <div class="controls" style="margin-bottom: 12px;">
-      <div class="control-group" style="width: 100%; border-right: none;">
-        <input type="text" id="songName" class="song-input" placeholder="ชื่อเพลง..." autocomplete="off">
-      </div>
-    </div>
-    
-    <div class="controls" style="margin-bottom: 16px;">
-      <div class="control-group" style="border:none; padding:0; gap: 10px;">
-        <input type="number" id="bpm" class="tempo-input" min="30" max="300" value="200" inputmode="numeric" title="Tempo (BPM)">
-        <span class="control-label">bpm</span>
-        <span class="control-label" style="color:var(--border); font-size:14px;">|</span>
-        <input type="number" id="numVak" class="tempo-input" min="1" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
-        <span class="control-label">บรรทัด</span>
-      </div>
-    </div>
-    
-    <div class="controls">
-      <div class="control-group" style="border:none; padding:0; width:100%; gap: 8px; flex-wrap: wrap;">
-        <!-- Record toggle — ไม่มี label -->
-        <button class="toggle on" id="recordToggle" role="switch" aria-checked="true" aria-label="เปิด/ปิดโหมดบันทึก" title="Record">
-          <span class="toggle-track"><span class="toggle-knob"></span></span>
-        </button>
 
-        <!-- Play / Stop -->
-        <button class="btn btn-icon primary" id="playBtn" aria-label="เล่นเพลง" title="เล่น">▶</button>
-        <button class="btn btn-icon" id="stopBtn" aria-label="หยุดเล่น" title="หยุด">■</button>
+    <div class="ctrl-toolbar">
 
-        <!-- Auto-scroll -->
-        <label class="toggle" style="cursor: pointer;" title="เลื่อนอัตโนมัติ">
-          <input type="checkbox" id="autoScrollToggle" checked style="accent-color: var(--accent); margin:0;">
-          <span style="font-size: 10px; color: var(--muted); margin-left: 2px; font-weight: 600;">เลื่อน</span>
-        </label>
-
-        <!-- Undo / Redo -->
-        <button class="btn btn-icon" id="undoBtn" disabled aria-label="ย้อนกลับ" title="ย้อนกลับ">↩</button>
-        <button class="btn btn-icon" id="redoBtn" disabled aria-label="ถัดไป" title="ถัดไป">↻</button>
-
-        <!-- Clear -->
-        <button class="btn btn-icon danger" id="clearBtn" aria-label="ล้างทั้งหมด" title="ล้างทั้งหมด">✕</button>
-
-        <!-- Import / Export dropdowns -->
-        <div class="dropdown" style="margin-left: auto;">
-          <button class="btn btn-icon" id="importMainBtn" title="นำเข้า">⬇ นำเข้า ▾</button>
-          <div class="dropdown-menu" id="importMenu">
-            <button class="dropdown-item" id="importJsonBtn">📄 ไฟล์โปรเจกต์ (.JSON)</button>
-            <button class="dropdown-item" id="importTxtBtn">📝 ไฟล์ข้อความ (.TXT)</button>
-            <button class="dropdown-item" id="importPdfBtn">📥 ตารางโน้ตจาก .PDF</button>
-          </div>
-        </div>
-        <div class="dropdown">
-          <button class="btn btn-icon export-btn" id="exportMainBtn" title="ส่งออก">⬆ ส่งออก ▾</button>
-          <div class="dropdown-menu" id="exportMenu">
-            <button class="dropdown-item" id="exportMenuMp3">🎵 ไฟล์เสียง (.MP3)</button>
-            <button class="dropdown-item" id="exportMenuJson">📄 ไฟล์โปรเจกต์ (.JSON)</button>
-            <button class="dropdown-item" id="exportMenuTxt">📝 ไฟล์ข้อความ (.TXT)</button>
-            <button class="dropdown-item" id="exportMenuPdf">🖨️ ตารางโน้ต (.PDF)</button>
-          </div>
+      <!-- ชื่อเพลง -->
+      <div class="ctrl-block ctrl-block--wide">
+        <span class="ctrl-block-label">ชื่อเพลง</span>
+        <div class="ctrl-block-body">
+          <input type="text" id="songName" class="song-input" placeholder="ตั้งชื่อเพลง..." autocomplete="off">
         </div>
       </div>
+
+      <div class="ctrl-divider-full"></div>
+
+      <!-- จังหวะ + โครงสร้าง -->
+      <div class="ctrl-block">
+        <span class="ctrl-block-label">จังหวะ</span>
+        <div class="ctrl-block-body">
+          <input type="number" id="bpm" class="tempo-input" min="30" max="300" value="200" inputmode="numeric" title="Tempo (BPM)">
+          <span class="control-label">bpm</span>
+        </div>
+      </div>
+
+      <div class="ctrl-block">
+        <span class="ctrl-block-label">โครงสร้าง</span>
+        <div class="ctrl-block-body">
+          <input type="number" id="numVak" class="tempo-input" min="1" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
+          <span class="control-label">บรรทัด</span>
+        </div>
+      </div>
+
+      <!-- การเล่น -->
+      <div class="ctrl-block">
+        <span class="ctrl-block-label">การเล่น</span>
+        <div class="ctrl-block-body">
+          <button class="toggle on" id="recordToggle" role="switch" aria-checked="true" aria-label="เปิด/ปิดโหมดบันทึก" title="Record">
+            <span class="toggle-track"><span class="toggle-knob"></span></span>
+            <span class="toggle-label">บันทึก</span>
+          </button>
+          <button class="btn btn-icon primary" id="playBtn" aria-label="เล่นเพลง" title="เล่น">▶ เล่น</button>
+          <button class="btn btn-icon" id="stopBtn" aria-label="หยุดเล่น" title="หยุด">■ หยุด</button>
+          <label class="toggle" style="cursor: pointer;" title="เลื่อนอัตโนมัติ">
+            <input type="checkbox" id="autoScrollToggle" checked style="accent-color: var(--accent); margin:0;">
+            <span class="toggle-label" style="font-size: 12px;">เลื่อนตาม</span>
+          </label>
+          <label class="toggle" style="cursor: pointer;" title="เสียงเคาะจังหวะที่โน้ตตัวที่ 4 ของทุกห้อง">
+            <input type="checkbox" id="metronomeToggle" style="accent-color: var(--accent); margin:0;">
+            <span class="toggle-label" style="font-size: 12px;">🥁 เคาะจังหวะ</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- แก้ไข -->
+      <div class="ctrl-block">
+        <span class="ctrl-block-label">แก้ไข</span>
+        <div class="ctrl-block-body">
+          <button class="btn btn-icon" id="undoBtn" disabled aria-label="ย้อนกลับ" title="ย้อนกลับ">↩ ย้อนกลับ</button>
+          <button class="btn btn-icon" id="redoBtn" disabled aria-label="ถัดไป" title="ถัดไป">↻ ถัดไป</button>
+          <button class="btn btn-icon danger" id="clearBtn" aria-label="ล้างทั้งหมด" title="ล้างทั้งหมด">✕ ล้างทั้งหมด</button>
+        </div>
+      </div>
+
+      <!-- ไฟล์: นำเข้า/ส่งออก -->
+      <div class="ctrl-block ctrl-block--end">
+        <span class="ctrl-block-label">ไฟล์</span>
+        <div class="ctrl-block-body">
+          <div class="dropdown">
+            <button class="btn btn-icon" id="importMainBtn" title="นำเข้า">⬇ นำเข้า ▾</button>
+            <div class="dropdown-menu" id="importMenu">
+              <button class="dropdown-item" id="importJsonBtn">📄 ไฟล์โปรเจกต์ (.JSON)</button>
+              <button class="dropdown-item" id="importTxtBtn">📝 ไฟล์ข้อความ (.TXT)</button>
+              <button class="dropdown-item" id="importPdfBtn">📥 ตารางโน้ตจาก .PDF</button>
+            </div>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-icon export-btn" id="exportMainBtn" title="ส่งออก">⬆ ส่งออก ▾</button>
+            <div class="dropdown-menu" id="exportMenu">
+              <button class="dropdown-item" id="exportMenuMp3">🎵 ไฟล์เสียง (.MP3)</button>
+              <button class="dropdown-item" id="exportMenuJson">📄 ไฟล์โปรเจกต์ (.JSON)</button>
+              <button class="dropdown-item" id="exportMenuTxt">📝 ไฟล์ข้อความ (.TXT)</button>
+              <button class="dropdown-item" id="exportMenuPdf">🖨️ ตารางโน้ต (.PDF)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
-    
+
     <div class="section-spacer" style="height:10px"></div>
     <div class="stats" id="statsContainer">
       <div class="stat" style="display:none;"><span class="value" id="cursorValue"></span></div>

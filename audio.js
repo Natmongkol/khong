@@ -119,6 +119,47 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
   } catch (err) { return null; }
 }
 
+// เสียงเคาะจังหวะ (metronome tick) — ใช้ที่โน้ตตัวที่ 4 ของทุกห้อง
+// อ้างอิงจากเสียงเมโทรนอมจริง: มี 2 ส่วนซ้อนกัน
+//   1) transient แหลมสั้นๆ (noise ผ่าน bandpass ~1.6kHz) จำลองเสียงกระทบ
+//   2) โทนเสียง "ตุ๊บ" สั้นๆ ที่ ~1050Hz จำลองเสียงกึกก้องของตัวเครื่อง
+function playMetronomeClick(when, gain = 1, customCtx = null) {
+  try {
+    const ctx = customCtx || ac(); if (!ctx) return null;
+    if (!customCtx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const t = Math.max(ctx.currentTime, (when ?? ctx.currentTime));
+    const master = ctx.createGain(); master.gain.value = 0.34 * gain; // ดังขึ้นกว่าเดิม
+    master.connect(ctx.destination);
+
+    // ส่วนที่ 1: transient แหลมสั้นๆ
+    const buf = _getNoiseBuf(ctx);
+    const noise = ctx.createBufferSource(); noise.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 1.1;
+    const noiseEnv = ctx.createGain();
+    noiseEnv.gain.setValueAtTime(0, t);
+    noiseEnv.gain.linearRampToValueAtTime(1, t + 0.001);
+    noiseEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+    noise.connect(bp); bp.connect(noiseEnv); noiseEnv.connect(master);
+    noise.start(t);
+
+    // ส่วนที่ 2: โทนเสียงตุ๊บสั้นๆ ที่ ~1050Hz
+    const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 1050;
+    const oscEnv = ctx.createGain();
+    oscEnv.gain.setValueAtTime(0, t);
+    oscEnv.gain.linearRampToValueAtTime(0.8, t + 0.002);
+    oscEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    osc.connect(oscEnv); oscEnv.connect(master);
+    osc.start(t); osc.stop(t + 0.1);
+
+    osc.onended = () => {
+      try { osc.disconnect(); oscEnv.disconnect(); noise.disconnect(); bp.disconnect(); noiseEnv.disconnect(); master.disconnect(); } catch(e){}
+    };
+
+    return master;
+  } catch (err) { return null; }
+}
+
 function playGong(idx, when) { 
     return playGongFreq(getActiveInst().freqs[idx], when); 
 }
@@ -483,6 +524,13 @@ function scheduleBeat(step, time) {
       // ยิงเล็กน้อยก่อนเวลาจริง 5ms เพื่อชดเชย perception lag เดิม (คงพฤติกรรมเดิมไว้)
       playbackVisualTimers.push({ time: Math.max(0, time - 0.005), run: () => flashGong(gong) });
   }
+
+  // เสียงเคาะจังหวะเบาๆ ที่โน้ตตัวที่ 4 ของทุกห้อง (beat % 4 === 3) — เปิด/ปิดได้ที่ toggle
+  const metroToggle = document.getElementById('metronomeToggle');
+  if (metroToggle && metroToggle.checked && (beat % 4 === 3)) {
+      const clickMaster = playMetronomeClick(time);
+      if (clickMaster) playbackActiveMasters.push(clickMaster);
+  }
   
   playbackVisualTimers.push({ time, run: () => {
       if (!state.isPlaying) return; state.currentBeat = beat;
@@ -707,6 +755,10 @@ async function exportMP3(customSeq = null, suffix = '') {
     const gongList = [...uniqueGongs];
     const gongBuffers = {};
 
+    // เสียงเคาะจังหวะ: เตรียมไว้ล่วงหน้าถ้าผู้ใช้เปิดใช้งาน toggle
+    const includeMetronome = !!document.getElementById('metronomeToggle')?.checked;
+    let clickBuffer = null;
+
     // render เสียง 1 ลูก ≈ 3 วินาที (decay ยาวสุด) ใช้เวลาน้อยมากเพราะ buffer สั้น
     const oneShotDur = 3.2; // วินาที — ครอบ decay ยาวสุด (2.8s) + หาง
     const oneShotLen = Math.ceil(sampleRate * oneShotDur);
@@ -719,6 +771,14 @@ async function exportMP3(customSeq = null, suffix = '') {
       gongBuffers[gongIdx] = await miniCtx.startRendering();
       const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); // 8→30%
       setExportProgress(pct, `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
+    }
+
+    if (includeMetronome) {
+      setExportProgress(30, 'เตรียมเสียงเคาะจังหวะ...');
+      const clickLen = Math.ceil(sampleRate * 0.12);
+      const miniClickCtx = new OfflineCtx(2, clickLen, sampleRate);
+      playMetronomeClick(0, 1, miniClickCtx);
+      clickBuffer = await miniClickCtx.startRendering();
     }
 
     // ─── STEP 2: Assemble เพลงโดย place AudioBufferSourceNode ───
@@ -738,6 +798,12 @@ async function exportMP3(customSeq = null, suffix = '') {
         src.buffer = gongBuffers[gong];
         src.connect(offlineCtx.destination);
         src.start(t);
+      }
+      if (includeMetronome && clickBuffer && (beat % 4 === 3)) {
+        const clickSrc = offlineCtx.createBufferSource();
+        clickSrc.buffer = clickBuffer;
+        clickSrc.connect(offlineCtx.destination);
+        clickSrc.start(t);
       }
     }
 

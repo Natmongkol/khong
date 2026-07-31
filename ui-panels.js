@@ -2,6 +2,13 @@
 
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
+
+  // ยกเลิก timer ของ toast เดิม (ถ้ามี) และล้าง toast เก่าออกทันที
+  // เพื่อไม่ให้ toast ใหม่ซ้อนต่อกันเป็นแถวๆ — ให้เห็นทีละอันเท่านั้น
+  if (showToast._timeoutId) clearTimeout(showToast._timeoutId);
+  if (showToast._removeId) clearTimeout(showToast._removeId);
+  container.innerHTML = '';
+
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   const icon = type === 'error' ? '✕ ' : type === 'success' ? '✓ ' : '';
@@ -10,9 +17,9 @@ function showToast(message, type = 'success') {
   
   requestAnimationFrame(() => toast.classList.add('show'));
   
-  setTimeout(() => {
+  showToast._timeoutId = setTimeout(() => {
     toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
+    showToast._removeId = setTimeout(() => toast.remove(), 300);
   }, 3500);
 }
 

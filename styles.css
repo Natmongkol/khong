@@ -124,9 +124,9 @@ section.panel h3 {
 .btn:hover:not(:disabled) { border-color: var(--accent); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
-.btn.primary:hover:not(:disabled) { background: #6fb0ff; border-color: #6fb0ff; }
+.btn.primary:hover:not(:disabled) { background: #c9793f; border-color: #c9793f; }
 .btn.export-btn { background: var(--purple); border-color: var(--purple); color: var(--bg); font-weight: 600; }
-.btn.export-btn:hover:not(:disabled) { background: #d0a3ff; border-color: #d0a3ff; }
+.btn.export-btn:hover:not(:disabled) { background: #9c78ba; border-color: #9c78ba; }
 .btn.danger { border-color: var(--red); color: var(--red); }
 .btn.danger:hover:not(:disabled) { background: rgba(192,69,63,0.12); }
 #undoBtn:hover:not(:disabled), #redoBtn:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); }
@@ -163,6 +163,24 @@ section.panel h3 {
   font-family: inherit; font-size: 14px; width: 100%; max-width: 320px;
 }
 .song-input:focus { outline: none; border-color: var(--accent); }
+
+/* ===== Controls toolbar: กลุ่มควบคุมแบบมีป้ายกำกับและเส้นแบ่งชัดเจน ===== */
+.ctrl-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px 22px; }
+.ctrl-block { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-block:not(:last-child) { padding-right: 22px; border-right: 1px solid var(--border); }
+.ctrl-block--wide { flex: 1 1 100%; }
+.ctrl-block--end { margin-left: auto; }
+.ctrl-block-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--muted);
+}
+.ctrl-block-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 768px) {
+  .ctrl-block:not(:last-child) { border-right: none; padding-right: 0; }
+  .ctrl-block--end { margin-left: 0; }
+  .ctrl-block { width: 100%; }
+}
+.ctrl-divider-full { flex-basis: 100%; height: 0; }
 
 .dropdown { position: relative; display: inline-block; }
 .dropdown-menu {
@@ -872,7 +890,7 @@ footer { padding: 20px; border-top: 1px solid var(--border); text-align: center;
 @media (max-width: 600px) { .save-panel { padding: 14px 16px; } }
 .save-panel-title { font-size: 11px; font-weight: 700; color: var(--green); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .btn.save-now { background: var(--green); border-color: var(--green); color: var(--bg); font-weight: 700; }
-.btn.save-now:hover:not(:disabled) { background: #5af0a8; border-color: #5af0a8; }
+.btn.save-now:hover:not(:disabled) { background: #6ea058; border-color: #6ea058; }
 .btn.save-file { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
 .btn.save-file:hover:not(:disabled) { background: #6fb0ff; border-color: #6fb0ff; }
 .save-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; }
