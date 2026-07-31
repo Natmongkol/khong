@@ -105,8 +105,6 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
     noise.onended = () => { try { noise.disconnect(); noiseFilter.disconnect(); noiseEnv.disconnect(); } catch(e){} };
 
     // ล้าง master/lp เมื่อ osc ที่อายุยาวสุด (maxDecay) จบ — ป้องกัน node สะสม
-    // ใช้ onended แทน setTimeout เพื่อหลีกเลี่ยง timer ที่อาจยิงผิดเวลา
-    // OfflineAudioContext: onended เชื่อถือได้กว่า setTimeout ระหว่าง startRendering
     if (lastOsc) {
       const origOnEnded = lastOsc.onended;
       lastOsc.onended = () => {
@@ -114,47 +112,6 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
         try { master.disconnect(); lp.disconnect(); } catch(e){}
       };
     }
-
-    return master;
-  } catch (err) { return null; }
-}
-
-// เสียงเคาะจังหวะ (metronome tick) — ใช้ที่โน้ตตัวที่ 4 ของทุกห้อง
-// อ้างอิงจากเสียงเมโทรนอมจริง: มี 2 ส่วนซ้อนกัน
-//   1) transient แหลมสั้นๆ (noise ผ่าน bandpass ~1.6kHz) จำลองเสียงกระทบ
-//   2) โทนเสียง "ตุ๊บ" สั้นๆ ที่ ~1050Hz จำลองเสียงกึกก้องของตัวเครื่อง
-function playMetronomeClick(when, gain = 1, customCtx = null) {
-  try {
-    const ctx = customCtx || ac(); if (!ctx) return null;
-    if (!customCtx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-    const t = Math.max(ctx.currentTime, (when ?? ctx.currentTime));
-    const master = ctx.createGain(); master.gain.value = 0.34 * gain; // ดังขึ้นกว่าเดิม
-    master.connect(ctx.destination);
-
-    // ส่วนที่ 1: transient แหลมสั้นๆ
-    const buf = _getNoiseBuf(ctx);
-    const noise = ctx.createBufferSource(); noise.buffer = buf;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 1.1;
-    const noiseEnv = ctx.createGain();
-    noiseEnv.gain.setValueAtTime(0, t);
-    noiseEnv.gain.linearRampToValueAtTime(1, t + 0.001);
-    noiseEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
-    noise.connect(bp); bp.connect(noiseEnv); noiseEnv.connect(master);
-    noise.start(t);
-
-    // ส่วนที่ 2: โทนเสียงตุ๊บสั้นๆ ที่ ~1050Hz
-    const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 1050;
-    const oscEnv = ctx.createGain();
-    oscEnv.gain.setValueAtTime(0, t);
-    oscEnv.gain.linearRampToValueAtTime(0.8, t + 0.002);
-    oscEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-    osc.connect(oscEnv); oscEnv.connect(master);
-    osc.start(t); osc.stop(t + 0.1);
-
-    osc.onended = () => {
-      try { osc.disconnect(); oscEnv.disconnect(); noise.disconnect(); bp.disconnect(); noiseEnv.disconnect(); master.disconnect(); } catch(e){}
-    };
 
     return master;
   } catch (err) { return null; }
@@ -205,6 +162,7 @@ function playCurrentRoom() {
   _autoScrollLastLine = null;
   const pBar = document.getElementById('playbackBar'); if (pBar) pBar.style.width = '0%';
   scheduler();
+  startVisualSync();
 }
 
 function playSelectedRooms() {
@@ -232,6 +190,7 @@ function playSelectedRooms() {
   _autoScrollLastLine = null;
   const pBar = document.getElementById('playbackBar'); if (pBar) pBar.style.width = '0%';
   scheduler();
+  startVisualSync();
 }
 
 function buildSequenceForRange(startSectionLine, endSectionLine) {
@@ -279,6 +238,7 @@ function playSection(startLine) {
   _autoScrollLastLine = null;
   const pBar = document.getElementById('playbackBar'); if (pBar) pBar.style.width = '0%';
   scheduler();
+  startVisualSync();
 }
 
 function openPlayRangeModal(startLineNum) {
@@ -324,6 +284,7 @@ function playSectionRange(startSectionLine, endSectionLine) {
   _autoScrollLastLine = null;
   const pBar = document.getElementById('playbackBar'); if (pBar) pBar.style.width = '0%';
   scheduler();
+  startVisualSync();
 }
 
 function playLineRange(startLine, endLine) {
@@ -401,21 +362,16 @@ function playLine(lineNum) {
   }
 
   scheduler();
+  startVisualSync();
 }
 
 let playbackEndTimer = null, playbackVisualTimers = [], playbackActiveMasters = [];
 let schedulerTimer = null; let currentStep = 0; let nextNoteTime = 0; let playbackSeq = [];
 
 // --- Visual sync loop -----------------------------------------------------
-// เดิม flashGong/highlight ถูกยิงด้วย setTimeout(ms) แยกทีละอัน คำนวณ delay ครั้งเดียวตอน schedule
-// ปัญหา: setTimeout ไม่แม่นยำ และเบราว์เซอร์จะ throttle timer เมื่อ tab ไม่ active (background)
-// ทำให้เสียง (Web Audio, เดินด้วย audio-hardware clock ที่แม่นยำและไม่ถูก throttle) กับภาพ (setTimeout) เพี้ยนออกจากกัน
-// วิธีแก้: เก็บ event เป็นคิวที่เรียงตามเวลา (audio-clock time) แล้วใช้ rAF วน "เทียบเวลาจริง" ทุกเฟรมแทน
-// ข้อดี: ไม่มี drift สะสม เพราะเช็คกับ ctx.currentTime ตรงๆทุกครั้ง และถ้า tab ถูกซ่อนแล้วกลับมา (rAF หยุดเองตอนซ่อน)
-// พอกลับมาเฟรมแรกจะ "ไล่ยิง" ทุก event ที่เลยเวลาไปแล้วรวดเดียว ทำให้ภาพกระโดดไปตรงกับเสียงทันที ไม่ใช่ค้าง/กระตุกตามหลัง
 let _visualSyncRAF = null;
 function startVisualSync() {
-  if (_visualSyncRAF !== null) return; // กันไม่ให้มีลูปซ้อนกัน
+  if (_visualSyncRAF !== null) return; 
   _visualSyncRAF = requestAnimationFrame(visualSyncTick);
 }
 function stopVisualSync() {
@@ -425,7 +381,6 @@ function visualSyncTick() {
   if (!state.isPlaying) { _visualSyncRAF = null; return; }
   const ctx = ac();
   const now = ctx ? ctx.currentTime : 0;
-  // playbackVisualTimers ถูก push เรียงตามเวลาเพิ่มขึ้นเสมอ (step/time เดินหน้าอย่างเดียว) จึงยิงจากหัวคิวได้เลย
   while (playbackVisualTimers.length && playbackVisualTimers[0].time <= now) {
     const ev = playbackVisualTimers.shift();
     try { ev.run(); } catch (_) {}
@@ -437,7 +392,6 @@ function startPlayback() {
   if (state.isPlaying) return; unlockAudio(); const ctx = ac(); if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
-  // เริ่มจากต้นเสมอ (หยุดแล้วเล่นใหม่ทุกครั้ง)
   playbackSeq = getPlaybackSequence();
   currentStep = 0;
 
@@ -456,7 +410,7 @@ function scheduler() {
   if (!state.isPlaying) return; const ctx = ac(); 
   const lookahead = 25.0; const scheduleAheadTime = 0.15; 
   
-  const currentBeatDur = 60 / state.bpm; // bpm ไม่เปลี่ยนระหว่าง loop — คำนวณครั้งเดียว
+  const currentBeatDur = 60 / state.bpm; 
   while (currentStep < playbackSeq.length && nextNoteTime < ctx.currentTime + scheduleAheadTime) {
       scheduleBeat(currentStep, nextNoteTime); 
       nextNoteTime += currentBeatDur; 
@@ -477,10 +431,9 @@ function _buildBeatCellMap() {
     _beatCellMap.get(b).push(el);
   });
 }
-let _currentBeatCells = [];   // cells ที่ highlight อยู่ตอนนี้
-let _autoScrollLastLine = null; // บรรทัดล่าสุดที่ scroll ไป
+let _currentBeatCells = [];   
+let _autoScrollLastLine = null; 
 
-// ระบบ Lerp Scroll เพื่อความนุ่มนวลสูงสุด (ไม่กระตุกตามจังหวะบีท)
 let _scrollLerpId = null;
 let _scrollTarget = 0;
 let _scrollWrapper = null;
@@ -490,12 +443,11 @@ function smoothScrollTick() {
     const current = _scrollWrapper.scrollLeft;
     const diff = _scrollTarget - current;
 
-    // ถ้ายังห่างเป้าหมายอยู่ ให้เลื่อนเข้าหาเป้า 8% ของระยะที่เหลือในทุกๆ เฟรม
     if (Math.abs(diff) > 0.5) {
         _scrollWrapper.scrollLeft = current + diff * 0.08;
         _scrollLerpId = requestAnimationFrame(smoothScrollTick);
     } else {
-        _scrollWrapper.scrollLeft = _scrollTarget; // ถึงเป้าหมายแล้ว ล็อคให้เป๊ะ
+        _scrollWrapper.scrollLeft = _scrollTarget; 
         _scrollLerpId = null;
     }
 }
@@ -521,15 +473,7 @@ function scheduleBeat(step, time) {
   for (const hand of handsToPlay) {
       const gong = state.notes[hand][beat]; if (gong == null) continue;
       const master = playGong(gong, time); if (master) playbackActiveMasters.push(master);
-      // ยิงเล็กน้อยก่อนเวลาจริง 5ms เพื่อชดเชย perception lag เดิม (คงพฤติกรรมเดิมไว้)
       playbackVisualTimers.push({ time: Math.max(0, time - 0.005), run: () => flashGong(gong) });
-  }
-
-  // เสียงเคาะจังหวะเบาๆ ที่โน้ตตัวที่ 4 ของทุกห้อง (beat % 4 === 3) — เปิด/ปิดได้ที่ toggle
-  const metroToggle = document.getElementById('metronomeToggle');
-  if (metroToggle && metroToggle.checked && (beat % 4 === 3)) {
-      const clickMaster = playMetronomeClick(time);
-      if (clickMaster) playbackActiveMasters.push(clickMaster);
   }
   
   playbackVisualTimers.push({ time, run: () => {
@@ -539,9 +483,6 @@ function scheduleBeat(step, time) {
       const prevCells = _currentBeatCells;
       const nextCells = (_beatCellMap && _beatCellMap.get(beat)) || [];
 
-      // ===== READ PHASE: อ่านค่า layout ทั้งหมดก่อน ยังไม่แตะ DOM เลย =====
-      // (ทำก่อน write ทุกตัว เพื่อเลี่ยง forced synchronous reflow — ปลอดภัย
-      //  เพราะ current-beat ใช้แค่ outline/background ซึ่งไม่กระทบ geometry ของ cell)
       let autoScrollOn = false;
       let lineWrap = null, scrollTarget = null, isNewLine = false, thisLine = null;
       let wrapper = null, targetScroll = 0;
@@ -551,38 +492,28 @@ function scheduleBeat(step, time) {
         autoScrollOn = !autoScroll || autoScroll.checked;
 
         if (autoScrollOn) {
-          // scroll ทั้งบรรทัด (line-wrap) ให้อยู่กลางจอ ทุกครั้งที่เปลี่ยนบรรทัด
           lineWrap = nextCells[0].closest('.line-wrap');
           scrollTarget = lineWrap || nextCells[0];
           thisLine = lineWrap ? lineWrap.dataset.lineNum : null;
           isNewLine = thisLine !== _autoScrollLastLine;
 
-          // เลื่อนหน้าจอแนวนอนตามตัวโน้ต
           const cell = nextCells[0];
           wrapper = cell.closest('.notation-wrapper');
           if (wrapper) {
-            // คำนวณตำแหน่งที่แน่นอนของตัวโน้ตโดยใช้ getBoundingClientRect เพื่อความแม่นยำสูงสุด
             const cellRect = cell.getBoundingClientRect();
             const wrapRect = wrapper.getBoundingClientRect();
-
-            // ตำแหน่งกึ่งกลางโน้ตสัมพัทธ์กับเนื้อหาทั้งหมดภายในตาราง (ตำแหน่งปัจจุบันบนจอ + ระยะที่เลื่อนไปแล้ว)
             const absoluteCellCenter = (cellRect.left + cellRect.width / 2) - wrapRect.left + wrapper.scrollLeft;
 
-            // ล็อคตำแหน่งตัวโน้ตปัจจุบันให้อยู่ที่ 30% ของหน้าจอเสมอ
             targetScroll = absoluteCellCenter - wrapRect.width * 0.30;
-
-            // ป้องกันไม่ให้เลื่อนเกินขอบซ้าย (0) และขอบขวาสุด
             const maxScroll = wrapper.scrollWidth - wrapRect.width;
             targetScroll = Math.max(0, Math.min(targetScroll, maxScroll));
           }
         }
       }
 
-      // ===== WRITE PHASE: เขียน DOM ทั้งหมดรวดเดียว หลังอ่านครบแล้ว =====
       const bar = document.getElementById('playbackBar'); if (bar) bar.style.width = pct + '%';
       if (typeof window._focusSeekUpdate === 'function') window._focusSeekUpdate(step);
 
-      // ลบ highlight เก่า แบบ O(1) จาก cache
       prevCells.forEach(c => c.classList.remove('current-beat'));
       _currentBeatCells = nextCells;
       _currentBeatCells.forEach(c => c.classList.add('current-beat'));
@@ -594,14 +525,11 @@ function scheduleBeat(step, time) {
         }
         if (wrapper) {
           if (isNewLine) {
-            // บังคับกลับซ้ายสุดทันทีเมื่อขึ้นบรรทัดใหม่ แบบไม่มีแอนิเมชัน
             setScrollTarget(wrapper, 0, true);
-            // หลังจากดีดกลับซ้ายสุดแล้ว ค่อยๆ ให้มันไหลไปตำแหน่งเป้าหมายต่อ
             if (targetScroll > 0) {
                 setTimeout(() => setScrollTarget(wrapper, targetScroll, false), 50);
             }
           } else {
-            // อัปเดตเป้าหมาย แล้วปล่อยให้ Lerp Animation ค่อยๆ ไหลตามไปอย่างนุ่มนวล
             setScrollTarget(wrapper, targetScroll, false);
           }
         }
@@ -618,10 +546,8 @@ function stopPlayback(cutAudio = false) {
   stopVisualSync();
   playbackVisualTimers = [];
 
-  // หยุด animation เลื่อนหน้าจอ
   if (_scrollLerpId) { cancelAnimationFrame(_scrollLerpId); _scrollLerpId = null; }
 
-  // ใช้ cache แทน querySelectorAll
   _currentBeatCells.forEach(c => c.classList.remove('current-beat'));
   _currentBeatCells = [];
   _autoScrollLastLine = null;
@@ -635,7 +561,6 @@ function stopPlayback(cutAudio = false) {
   }
   playbackActiveMasters = [];
 
-  // reset เสมอ — ไม่ว่าจะหยุดเองหรือผู้ใช้กดหยุด ให้กลับไปเริ่มต้นใหม่ทุกครั้ง
   playbackSeq = [];
   currentStep = 0;
   state.playMode = 'all';
@@ -644,7 +569,6 @@ function stopPlayback(cutAudio = false) {
 
   if (typeof window._syncFocusPlayBtn === 'function') window._syncFocusPlayBtn();
 
-  // รีเซ็ตปุ่ม ▶ ของบรรทัดที่เคยเล่นค้างไว้
   document.querySelectorAll('.line-play-btn.stop-active').forEach(btn => {
       btn.textContent = '▶';
       btn.className = 'line-play-btn';
@@ -740,9 +664,6 @@ async function exportMP3(customSeq = null, suffix = '') {
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OfflineCtx) throw new Error('เบราว์เซอร์ไม่รองรับ OfflineAudioContext');
 
-    // ─── STEP 1: Pre-render แต่ละโน้ตเป็น AudioBuffer ครั้งเดียว ───
-    // วิธีนี้เร็วกว่าใช้ oscillators ใน offline context โดยตรงมาก
-    // เพราะ graph ใหญ่ (5 osc + filter + gain ต่อโน้ต) ทำให้ render ช้า
     const inst = getActiveInst();
     const uniqueGongs = new Set();
     for (let step = 0; step < seq.length; step++) {
@@ -755,12 +676,7 @@ async function exportMP3(customSeq = null, suffix = '') {
     const gongList = [...uniqueGongs];
     const gongBuffers = {};
 
-    // เสียงเคาะจังหวะ: เตรียมไว้ล่วงหน้าถ้าผู้ใช้เปิดใช้งาน toggle
-    const includeMetronome = !!document.getElementById('metronomeToggle')?.checked;
-    let clickBuffer = null;
-
-    // render เสียง 1 ลูก ≈ 3 วินาที (decay ยาวสุด) ใช้เวลาน้อยมากเพราะ buffer สั้น
-    const oneShotDur = 3.2; // วินาที — ครอบ decay ยาวสุด (2.8s) + หาง
+    const oneShotDur = 3.2; 
     const oneShotLen = Math.ceil(sampleRate * oneShotDur);
 
     for (let gi = 0; gi < gongList.length; gi++) {
@@ -769,20 +685,10 @@ async function exportMP3(customSeq = null, suffix = '') {
       const miniCtx = new OfflineCtx(2, oneShotLen, sampleRate);
       playGongFreq(freq, 0, 1, miniCtx);
       gongBuffers[gongIdx] = await miniCtx.startRendering();
-      const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); // 8→30%
+      const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); 
       setExportProgress(pct, `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
     }
 
-    if (includeMetronome) {
-      setExportProgress(30, 'เตรียมเสียงเคาะจังหวะ...');
-      const clickLen = Math.ceil(sampleRate * 0.12);
-      const miniClickCtx = new OfflineCtx(2, clickLen, sampleRate);
-      playMetronomeClick(0, 1, miniClickCtx);
-      clickBuffer = await miniClickCtx.startRendering();
-    }
-
-    // ─── STEP 2: Assemble เพลงโดย place AudioBufferSourceNode ───
-    // เร็วมากเพราะไม่ต้อง synthesize oscillator ซ้ำ
     setExportProgress(32, 'ประกอบเพลง...');
     await new Promise(r => setTimeout(r, 10));
 
@@ -799,28 +705,17 @@ async function exportMP3(customSeq = null, suffix = '') {
         src.connect(offlineCtx.destination);
         src.start(t);
       }
-      if (includeMetronome && clickBuffer && (beat % 4 === 3)) {
-        const clickSrc = offlineCtx.createBufferSource();
-        clickSrc.buffer = clickBuffer;
-        clickSrc.connect(offlineCtx.destination);
-        clickSrc.start(t);
-      }
     }
 
     setExportProgress(38, 'render เสียงรวม...');
     let renderedBuffer;
     {
-      // เดิมใช้ offlineCtx.suspend(pos)/resume() วนทุก 1 วินาทีเพื่ออัปเดต progress
-      // ปัญหา: ยิง suspend() หลายจุดพร้อมกันแบบไม่รอกัน ถ้าจังหวะ suspend ตรงกับขอบ buffer พอดี
-      // (โดยเฉพาะ Safari) promise อาจไม่ resolve และ error ถูกกลืนเงียบด้วย .catch(()=>{})
-      // ทำให้ resume() ในจุดนั้นไม่ถูกเรียก และ startRendering() ค้างไปเลยโดยไม่มี error ให้เห็น
-      // แก้โดยปล่อย render รวดเดียว (เร็วอยู่แล้วสำหรับเพลงสั้นๆ) แล้วจำลอง progress ด้วย timer ธรรมดาแทน
       let lastPct = 38;
-      const estMs = Math.max(300, duration * 60); // เวลาโดยประมาณที่ render จะใช้ (คร่าวๆ ตามความยาวเพลง)
+      const estMs = Math.max(300, duration * 60); 
       const startedAt = performance.now();
       const progressTimer = setInterval(() => {
         const frac = Math.min(0.97, (performance.now() - startedAt) / estMs);
-        const pct = 38 + Math.round(frac * 12); // 38→50%
+        const pct = 38 + Math.round(frac * 12); 
         if (pct > lastPct) { lastPct = pct; setExportProgress(pct, 'render เสียงรวม...'); }
       }, 150);
 
@@ -917,4 +812,3 @@ function exportNotation() {
   a.href = URL.createObjectURL(blob); a.download = `${safeName}_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.json`;
   a.click();
 }
-
