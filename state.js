@@ -13,10 +13,7 @@ const INSTRUMENTS = {
             if (idx <= 4) return 'low';
             if (idx >= 12) return 'high';
             return 'mid';
-        },
-        // โฟลเดอร์เก็บไฟล์เสียงจริง: Sounds/kwy/0.m4a ... 15.m4a (ตามลำดับลูกฆ้อง idx 0-15)
-        sampleDir: 'Sounds/kwy',
-        sampleExt: 'm4a'
+        }
     },
     kmwy: {
         id: 'kmwy',
@@ -32,7 +29,6 @@ const INSTRUMENTS = {
         },
         octaveMapUp: {0:5, 1:6, 2:8, 3:9, 4:10, 5:12, 6:13, 7:14},
         octaveMapDown: {5:0, 6:1, 8:2, 9:3, 10:4, 12:5, 13:6, 14:7}
-        // ยังไม่มีไฟล์เสียงจริง (sampleDir) -> จะใช้เสียงสังเคราะห์ (playGongFreq) ไปโดยอัตโนมัติ
     }
 };
 
