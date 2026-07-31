@@ -47,6 +47,40 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('pagehide', _resetDragSideEffects);
 
+// ===== เสียงจริง (recorded samples) ต่อลูกฆ้อง =====
+// sampleBuffers[instId] = array ของ AudioBuffer|null เรียงตาม idx ของลูกฆ้อง
+const sampleBuffers = {};
+const _sampleLoadPromises = {};
+
+// โหลดไฟล์เสียงจริงของเครื่องดนตรีหนึ่งชิ้น (ถ้ามี sampleDir กำหนดไว้ใน INSTRUMENTS)
+// โหลดครั้งเดียวแล้ว cache ไว้; ไฟล์ที่ขาด/โหลดไม่สำเร็จ จะเป็น null (ตกไปใช้เสียงสังเคราะห์แทนอัตโนมัติ)
+function loadInstrumentSamples(instId) {
+  if (_sampleLoadPromises[instId]) return _sampleLoadPromises[instId];
+  const inst = INSTRUMENTS[instId];
+  if (!inst || !inst.sampleDir) { _sampleLoadPromises[instId] = Promise.resolve(); return _sampleLoadPromises[instId]; }
+  const ctx = ac(); if (!ctx) { _sampleLoadPromises[instId] = Promise.resolve(); return _sampleLoadPromises[instId]; }
+  const ext = inst.sampleExt || 'mp3';
+  sampleBuffers[instId] = sampleBuffers[instId] || new Array(inst.numGongs).fill(null);
+
+  const jobs = [];
+  for (let idx = 0; idx < inst.numGongs; idx++) {
+    const url = `${inst.sampleDir}/${idx}.${ext}`;
+    jobs.push(
+      fetch(url)
+        .then(res => { if (!res.ok) throw new Error('missing: ' + url); return res.arrayBuffer(); })
+        .then(arr => ctx.decodeAudioData(arr))
+        .then(buf => { sampleBuffers[instId][idx] = buf; })
+        .catch(err => { console.warn(`ไม่พบ/โหลดไฟล์เสียงจริงไม่สำเร็จ (${url}), จะใช้เสียงสังเคราะห์แทน:`, err.message); })
+    );
+  }
+  _sampleLoadPromises[instId] = Promise.all(jobs);
+  return _sampleLoadPromises[instId];
+}
+
+// เรียกโหลดล่วงหน้าตอนเปิดหน้า/สลับเครื่องดนตรี ไม่ต้องรอ (fire-and-forget)
+// หมายเหตุ: สคริปต์นี้ถูกโหลดท้าย body จึง DOM พร้อมแล้ว เรียกตรงได้เลยไม่ต้องรอ DOMContentLoaded
+Object.keys(INSTRUMENTS).forEach(instId => { if (INSTRUMENTS[instId].sampleDir) loadInstrumentSamples(instId); });
+
 let _cachedNoiseBuf = null;
 let _cachedNoiseSR  = 0;   // sampleRate ที่ใช้สร้าง buffer — แยกออกมาเพราะ AudioBuffer.sampleRate เป็น read-only
 function _getNoiseBuf(ctx) {
@@ -117,8 +151,36 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
   } catch (err) { return null; }
 }
 
-function playGong(idx, when) { 
-    return playGongFreq(getActiveInst().freqs[idx], when); 
+// เล่น AudioBuffer เสียงจริง 1 ลูกฆ้อง ที่เวลา when (รองรับทั้ง live ctx และ OfflineAudioContext ตอน export)
+function playGongBuffer(buf, when, gain = 1, customCtx = null) {
+  try {
+    const ctx = customCtx || ac(); if (!ctx) return null;
+    if (!customCtx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const t = Math.max(ctx.currentTime, (when ?? ctx.currentTime));
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    // fade เข้าเร็วมาก ป้องกันเสียง click ถ้าจุดเริ่มไฟล์ไม่ได้ตัดที่ zero-crossing พอดี
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.003);
+    src.connect(g); g.connect(ctx.destination);
+    src.start(t);
+    src.onended = () => { try { src.disconnect(); g.disconnect(); } catch (e) {} };
+    return g;
+  } catch (err) { return null; }
+}
+
+// เล่นลูกฆ้อง idx ของเครื่องดนตรี instId ที่เวลา when — ใช้เสียงจริงถ้ามี ไม่มีก็ fallback เป็นเสียงสังเคราะห์
+function playGongForInst(instId, idx, when, gain = 1, customCtx = null) {
+  const inst = INSTRUMENTS[instId];
+  const buf = sampleBuffers[instId] && sampleBuffers[instId][idx];
+  if (buf) return playGongBuffer(buf, when, gain, customCtx);
+  return playGongFreq(inst.freqs[idx], when, gain, customCtx);
+}
+
+function playGong(idx, when) {
+    return playGongForInst(currentInstrument, idx, when);
 }
 
 
@@ -676,14 +738,19 @@ async function exportMP3(customSeq = null, suffix = '') {
     const gongList = [...uniqueGongs];
     const gongBuffers = {};
 
-    const oneShotDur = 3.2; 
-    const oneShotLen = Math.ceil(sampleRate * oneShotDur);
+    // ถ้าเครื่องดนตรีนี้มีไฟล์เสียงจริง รอโหลดให้เสร็จก่อน export (กันกรณีสลับเครื่องแล้ว export ทันที)
+    if (inst.sampleDir) await loadInstrumentSamples(currentInstrument);
+
+    const oneShotDurDefault = 3.2;
 
     for (let gi = 0; gi < gongList.length; gi++) {
       const gongIdx = gongList[gi];
-      const freq = inst.freqs[gongIdx];
+      const realBuf = sampleBuffers[currentInstrument] && sampleBuffers[currentInstrument][gongIdx];
+      // ไฟล์เสียงจริง อาจยาว/สั้นกว่าเสียงสังเคราะห์ -> ปรับความยาว one-shot ให้พอดีกับไฟล์จริงเสมอ
+      const oneShotDur = realBuf ? (realBuf.duration + 0.1) : oneShotDurDefault;
+      const oneShotLen = Math.ceil(sampleRate * oneShotDur);
       const miniCtx = new OfflineCtx(2, oneShotLen, sampleRate);
-      playGongFreq(freq, 0, 1, miniCtx);
+      playGongForInst(currentInstrument, gongIdx, 0, 1, miniCtx);
       gongBuffers[gongIdx] = await miniCtx.startRendering();
       const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); 
       setExportProgress(pct, `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
