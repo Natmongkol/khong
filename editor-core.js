@@ -5,6 +5,14 @@ function renderGongs() {
   stage.innerHTML = ''; 
   
   const inst = getActiveInst();
+
+  // ระนาดเอก: ใช้ผังลูกระนาดเรียงแนวนอน (bars) แทนวงฆ้องวงกลม
+  if (currentInstrument === 'ranatek') {
+    renderBars(stage, inst);
+    _rebuildGongCache();
+    return;
+  }
+
   const numGongs = inst.numGongs;
   
   for (let i = 0; i < numGongs; i++) {
@@ -23,6 +31,28 @@ function renderGongs() {
   _rebuildGongCache();
 }
 
+function renderBars(stage, inst) {
+  const wrap = document.createElement('div');
+  wrap.className = 'bars ranat-ek';
+
+  for (let i = 0; i < inst.numGongs; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar'; bar.dataset.idx = i; bar.title = inst.display[i];
+
+    const main = document.createElement('span');
+    main.className = 'note-main';
+    main.textContent = inst.display[i];
+
+    bar.appendChild(main);
+
+    const interact = (e) => { e.preventDefault(); unlockAudio(); triggerGong(i); };
+    bar.addEventListener('pointerdown', interact);
+    wrap.appendChild(bar);
+  }
+
+  stage.appendChild(wrap);
+}
+
 function layoutGongs() {
   const stage = document.getElementById('gong-stage');
   const w = stage.clientWidth; const h = stage.clientHeight;
@@ -33,6 +63,9 @@ function layoutGongs() {
     return;
   }
   layoutGongs._pendingLayout = false;
+
+  // ระนาดเอก: ลูกระนาดเรียงด้วย CSS flex ปกติ ไม่ต้องคำนวณตำแหน่งวงกลม
+  if (currentInstrument === 'ranatek') return;
 
   const inst = getActiveInst();
   const numGongs = inst.numGongs;
@@ -146,7 +179,7 @@ const _gongEls = new Map();   // idx -> gong DOM element
 const _kbEls   = new Map();   // idx -> array of kb-note elements
 function _rebuildGongCache() {
   _gongEls.clear(); _kbEls.clear();
-  document.querySelectorAll('.gong-stage .gong').forEach(el => {
+  document.querySelectorAll('.gong-stage .gong, .gong-stage .bar').forEach(el => {
     _gongEls.set(parseInt(el.dataset.idx), el);
   });
   document.querySelectorAll(`.touch-keyboard #kb-${currentInstrument} .tk-note`).forEach(el => {
@@ -157,7 +190,7 @@ function _rebuildGongCache() {
 }
 
 function flashGong(idx) {
-  const el = _gongEls.get(idx) || document.querySelector(`.gong-stage .gong[data-idx="${idx}"]`);
+  const el = _gongEls.get(idx) || document.querySelector(`.gong-stage .gong[data-idx="${idx}"], .gong-stage .bar[data-idx="${idx}"]`);
   if (el) {
     // restart animation โดยไม่ force reflow: ยกเลิก animation เก่าแล้วใส่ class ใหม่
     // หมายเหตุ: layoutGongs() set gong.style.transform เป็น inline style ซึ่ง override CSS animation
@@ -232,7 +265,7 @@ function typeNote(baseIdx) {
   const inst = getActiveInst();
 
   if (tabHeld) {
-      if (currentInstrument === 'kwy') {
+      if (currentInstrument === 'kwy' || currentInstrument === 'ranatek') {
           let lo = baseIdx, hi = baseIdx + 7;
           if (hi >= inst.numGongs) { hi = baseIdx; lo = baseIdx - 7; }
           leftNote = (lo >= 0) ? lo : null; rightNote = (hi < inst.numGongs) ? hi : null;

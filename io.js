@@ -196,33 +196,59 @@ function applyTextImport(text) {
 }
 
 function applyImport(data, silent = false) {
-  if (data.instrument && data.instrument !== currentInstrument) {
-      currentInstrument = data.instrument;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid project data');
+
+  const importedInstrument = data.instrument || currentInstrument;
+  if (!Object.prototype.hasOwnProperty.call(INSTRUMENTS, importedInstrument)) {
+    throw new Error('Unknown instrument in imported project');
+  }
+
+  if (importedInstrument !== currentInstrument) {
+      currentInstrument = importedInstrument;
       
       const sel = document.getElementById('instSelect');
-      if (sel && sel.value !== data.instrument) sel.value = data.instrument;
+      if (sel && sel.value !== importedInstrument) sel.value = importedInstrument;
 
       document.getElementById('instPanelTitle').textContent = `${getActiveInst().name} · ${getActiveInst().numGongs} ลูก`;
       document.getElementById('notationSubtitle').textContent = `ทาง${getActiveInst().name}`;
-      document.getElementById('kb-kwy').style.display = (data.instrument === 'kwy') ? 'block' : 'none';
-      document.getElementById('kb-kmwy').style.display = (data.instrument === 'kmwy') ? 'block' : 'none';
+      document.getElementById('kb-kwy').style.display = (importedInstrument === 'kwy') ? 'block' : 'none';
+      document.getElementById('kb-kmwy').style.display = (importedInstrument === 'kmwy') ? 'block' : 'none';
+      document.getElementById('kb-ranatek').style.display = (importedInstrument === 'ranatek') ? 'block' : 'none';
       renderImeInfographic();
       renderGongs();
   }
     
   if (!silent) pushUndo();
-  if (data.songName !== undefined) { state.songName = data.songName; document.getElementById('songName').value = state.songName; } 
+  if (typeof data.songName === 'string') { state.songName = data.songName.slice(0, 200); document.getElementById('songName').value = state.songName; } 
   else { state.songName = ''; document.getElementById('songName').value = ''; }
   updatePageTitle();
 
-  if (data.tempo) { state.bpm = Math.max(30, Math.min(300, data.tempo)); document.getElementById('bpm').value = state.bpm; }
-  let vak = data.vak || Math.max(1, Math.ceil(((data.notes && data.notes.right && data.notes.right.length) || 0) / 32 || 1));
-  state.numBars = Math.max(1, Math.round(vak)) * BARS_PER_VAK;
+  if (Number.isFinite(data.tempo)) { state.bpm = Math.max(30, Math.min(300, data.tempo)); document.getElementById('bpm').value = state.bpm; }
+  const noteLength = Array.isArray(data.notes?.right) ? data.notes.right.length : 0;
+  const requestedVak = Number.isFinite(data.vak) ? data.vak : Math.ceil(noteLength / 32);
+  const vak = Math.max(1, Math.min(MAX_VAKS, Math.round(requestedVak || 1)));
+  state.numBars = vak * BARS_PER_VAK;
   document.getElementById('numVak').value = state.numBars / BARS_PER_VAK;
   
-  state.repeats = data.repeats || {};
-  state.sections = data.sections || {};
-  state.lineLengths = data.lineLengths || {};
+  const validLine = (key) => Number.isInteger(Number(key)) && Number(key) >= 1 && Number(key) <= vak;
+  state.repeats = {};
+  if (data.repeats && typeof data.repeats === 'object') {
+    for (const [line, target] of Object.entries(data.repeats)) {
+      if (validLine(line) && validLine(target)) state.repeats[line] = Number(target);
+    }
+  }
+  state.sections = {};
+  if (data.sections && typeof data.sections === 'object') {
+    for (const [line, name] of Object.entries(data.sections)) {
+      if (validLine(line) && typeof name === 'string') state.sections[line] = name.slice(0, 100);
+    }
+  }
+  state.lineLengths = {};
+  if (data.lineLengths && typeof data.lineLengths === 'object') {
+    for (const [line, length] of Object.entries(data.lineLengths)) {
+      if (validLine(line) && Number.isInteger(length) && length >= 1 && length <= BARS_PER_VAK) state.lineLengths[line] = length;
+    }
+  }
   state._editingSection = null;
   state.selectedLine = null;
   
@@ -230,8 +256,9 @@ function applyImport(data, silent = false) {
     const maxIdx = getActiveInst().numGongs - 1;
     // clamp note indices ให้อยู่ใน range ของ instrument ปัจจุบัน
     // ป้องกัน inst.display[idx] / inst.freqs[idx] เป็น undefined เมื่อ import ข้าม instrument
+    const maxBeats = vak * BARS_PER_VAK * BEATS_PER_BAR;
     const clampNotes = (arr) => Array.isArray(arr)
-      ? arr.map(v => (v == null ? null : (Number.isInteger(v) && v >= 0 && v <= maxIdx) ? v : null))
+      ? arr.slice(0, maxBeats).map(v => (v == null ? null : (Number.isInteger(v) && v >= 0 && v <= maxIdx) ? v : null))
       : [];
     state.notes.right = clampNotes(data.notes.right);
     state.notes.left  = clampNotes(data.notes.left);
@@ -252,16 +279,21 @@ function exportPDF() {
   }
 
   const totalLines = Math.ceil(state.numBars / BARS_PER_VAK);
-  const songTitle = (state.songName && state.songName.trim()) ? state.songName.trim() : 'ไม่มีชื่อเพลง';
-
+  const songTitle = _escHTML((state.songName && state.songName.trim()) ? state.songName.trim() : 'ไม่มีชื่อเพลง');
   let contentHTML = '';
+  let sectionLeadOpen = false;
+  let sectionLeadLines = 0;
 
   for (let line = 0; line < totalLines; line++) {
     const lineNum = line + 1;
 
     const secName = (state.sections && state.sections[lineNum] !== undefined) ? state.sections[lineNum] : null;
     if (secName !== null) {
-      contentHTML += `<div class="section-label">${secName}</div>`;
+      if (sectionLeadOpen) contentHTML += '</div>';
+      // Keep the title and the first three notation lines together on one page.
+      contentHTML += `<div class="section-lead"><div class="section-label">${_escHTML(secName)}</div>`;
+      sectionLeadOpen = true;
+      sectionLeadLines = 0;
     }
 
     const barsInThisLine = state.lineLengths[lineNum] !== undefined ? state.lineLengths[lineNum] : 8;
@@ -293,7 +325,13 @@ function exportPDF() {
         ${hasRepeat ? `<div class="repeat-label" style="width: ${tableWidth}%;">กลับต้น</div>` : ''}
       </div>
     `;
+
+    if (sectionLeadOpen && ++sectionLeadLines >= 3) {
+      contentHTML += '</div>';
+      sectionLeadOpen = false;
+    }
   }
+  if (sectionLeadOpen) contentHTML += '</div>';
 
   const printHTML = `<!DOCTYPE html>
 <html lang="th">
@@ -320,6 +358,7 @@ function exportPDF() {
     body { padding: 0.5in; max-width: 210mm; margin: 0 auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
   }
   .doc-title { text-align: center; font-size: 18px; font-weight: 700; margin-bottom: 22px; letter-spacing: 0.01em; }
+  .section-lead { break-inside: avoid; page-break-inside: avoid; }
   .section-label { font-size: 14px; font-weight: 700; margin-top: 18px; margin-bottom: 4px; text-align: left; }
   .line-block { margin-bottom: 14px; page-break-inside: avoid; }
   table.notation-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }
@@ -696,12 +735,12 @@ const PDF_IMPORT = (() => {
     let html = '';
 
     if (parsed.songName) {
-      html += `<div style="color:var(--gold);font-weight:700;margin-bottom:6px;">เพลง ${parsed.songName}</div>`;
+      html += `<div style="color:var(--gold);font-weight:700;margin-bottom:6px;">เพลง ${_escHTML(parsed.songName)}</div>`;
     }
 
     parsed.vaks.slice(0, MAX_PREVIEW).forEach((vak, vi) => {
       if (vak.section) {
-        html += `<div style="color:var(--accent);font-size:11px;margin-top:4px;">[${vak.section}]</div>`;
+        html += `<div style="color:var(--accent);font-size:11px;margin-top:4px;">[${_escHTML(vak.section)}]</div>`;
       }
       const toStr = arr => arr.map(n => n === null || !displayNotes[n] ? '-' : displayNotes[n]).join(' ');
       html += `<div style="color:var(--muted);font-size:11px;">วรรค ${vi+1}</div>`;
@@ -855,4 +894,3 @@ document.addEventListener('DOMContentLoaded', () => {
   PDF_IMPORT.init();
   initQuickNav();
 });
-

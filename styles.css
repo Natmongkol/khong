@@ -112,6 +112,57 @@ section.panel h3 {
   .control-group { border-right: none; padding-right: 0; width: 100%; justify-content: flex-start; }
 }
 
+/* Control panel: group related actions and let the row use the full width. */
+.ctrl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ctrl-block {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 10px 12px;
+  background: rgba(255,252,245,0.58);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ctrl-block--wide { flex: 1 1 250px; }
+.ctrl-block:nth-of-type(5) { flex: 1 1 330px; }
+.ctrl-block--end { margin-left: auto; }
+.ctrl-block-label {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+}
+.ctrl-block-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ctrl-block-body .song-input { max-width: none; }
+.ctrl-divider-full { display: none; }
+
+@media (max-width: 860px) {
+  .ctrl-toolbar { justify-content: flex-start; }
+  .ctrl-block--wide,
+  .ctrl-block:nth-of-type(5) { flex-basis: 100%; }
+  .ctrl-block--end { margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .ctrl-toolbar { gap: 8px; }
+  .ctrl-block { width: 100%; padding: 9px 10px; }
+  .ctrl-block-body { gap: 7px; }
+}
+
 .control-label {
   font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
   text-transform: uppercase; color: var(--muted);
@@ -241,6 +292,53 @@ section.panel h3 {
   z-index: 2;
 }
 
+/* ===== ระนาดเอก: ผังลูกระนาดเรียงแนวนอน (bars) ===== */
+.gong-stage .bars {
+  position: absolute; inset: 0;
+  display: flex; flex-wrap: nowrap; align-items: center; justify-content: center;
+  gap: 5px; padding: 16px;
+  overflow: hidden;
+}
+.bar {
+  position: relative;
+  flex: 1 1 0; min-width: 0; max-width: 42px;
+  height: 68%; min-height: 160px; max-height: 460px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #e8c07a 0%, #c9974f 45%, #8a5f2b 100%);
+  border: 2px solid #3a2612;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4), inset 0 -3px 5px rgba(0,0,0,0.35), inset 0 2px 3px rgba(255,214,150,0.35);
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: transform 0.08s, box-shadow 0.15s;
+  user-select: none; -webkit-user-select: none;
+  will-change: transform;
+  contain: layout style;
+}
+.bar:active { transform: scale(0.95); }
+@media (hover: hover) {
+  .bar:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(255,213,74,0.3), inset 0 -3px 5px rgba(0,0,0,0.35), inset 0 2px 3px rgba(255,214,150,0.25);
+  }
+}
+.bar.playing { animation: bar-hit 0.3s ease-out; }
+@keyframes bar-hit {
+  0%   { transform: translateY(0) scale(1);    box-shadow: 0 0 0 0 rgba(255,213,74,0.85); }
+  25%  { transform: translateY(-4px) scale(1.05); box-shadow: 0 0 20px 8px rgba(255,213,74,0.5); }
+  60%  { transform: translateY(-1px) scale(1.01); box-shadow: 0 0 8px 3px rgba(255,213,74,0.2); }
+  100% { transform: translateY(0) scale(1);    box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+}
+.bar .note-main {
+  font-size: clamp(9px, 3vw, 17px); font-weight: 800; line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.6);
+  pointer-events: none;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .bar { min-height: 120px; }
+}
+
 .notation-wrapper { width: 100%; overflow-x: auto; padding-bottom: 8px; user-select: none; -webkit-user-select: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; will-change: scroll-position; }
 .notation { font-family: "SF Mono", Menlo, monospace; min-width: min(600px, 100%); touch-action: pan-x pan-y; }
 @media (max-width: 768px) {
@@ -303,6 +401,10 @@ section.panel h3 {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(181,101,47,0.45);
 }
+.line-wrap.dragging .line-num {
+  color: var(--text);
+  font-weight: 800;
+}
 .line-wrap.dragging {
   opacity: 0.38;
   position: relative;
@@ -328,6 +430,11 @@ section.panel h3 {
   color: var(--bg);
   border-color: var(--accent);
   box-shadow: 0 4px 16px rgba(181,101,47,0.5);
+}
+.line-wrap.drag-ghost .line-num {
+  color: var(--bg);
+  font-weight: 800;
+  text-shadow: 0 1px 1px rgba(255,255,255,0.15);
 }
 .line-wrap.drag-ghost .line-play-btn { color: var(--bg); border-color: rgba(0,0,0,0.2); background: rgba(0,0,0,0.15); }
 

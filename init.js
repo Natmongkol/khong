@@ -25,17 +25,23 @@ function initTopControls() {
   document.getElementById('songName').addEventListener('input', (e) => { 
     state.songName = e.target.value; 
     updatePageTitle();
+    scheduleAutosave();
   });
   
   document.getElementById('bpm').addEventListener('input', (e) => { 
     state.bpm = Math.max(30, Math.min(300, +e.target.value || 200)); 
+    scheduleAutosave();
   });
   // เมื่อพิมพ์เสร็จ (blur) ให้ปรับตัวเลขในช่องให้ตรงกับค่าที่ clamp แล้วจริงๆ กันช่องโชว์ค่าที่เกินขอบเขต (เช่น 500) ทั้งที่เพลงเล่นที่ 300
   document.getElementById('bpm').addEventListener('blur', (e) => {
     if (+e.target.value !== state.bpm) e.target.value = state.bpm;
   });
   
-  document.getElementById('numVak').addEventListener('change', (e) => { pushUndo(); state.numBars = Math.max(1, +e.target.value || 1) * BARS_PER_VAK; ensureCapacity(); renderNotation(); });
+  document.getElementById('numVak').addEventListener('change', (e) => {
+    const vaks = Math.max(1, Math.min(MAX_VAKS, Math.round(+e.target.value || 1)));
+    e.target.value = vaks;
+    pushUndo(); state.numBars = vaks * BARS_PER_VAK; ensureCapacity(); renderNotation();
+  });
 
   const recTog = document.getElementById('recordToggle');
   recTog.addEventListener('click', () => { state.isRecording = !state.isRecording; recTog.classList.toggle('on', state.isRecording); recTog.setAttribute('aria-checked', state.isRecording); renderNotation(); });
@@ -1049,6 +1055,13 @@ function initGlobalPointerAndKeyboard() {
     'KeyA':'ด', 'KeyS':'ร', 'KeyD':'ม', 'KeyF':'ฟ', 'KeyG':'ซ', 'KeyH':'ล', 'KeyJ':'ท',
     'KeyZ':'ดฺ', 'KeyX':'รฺ', 'KeyC':'มฺ', 'KeyV':'ฟฺ', 'KeyB':'ซฺ', 'KeyN':'ลฺ', 'KeyM':'ทฺ'
   };
+
+  // ระนาดเอก: ผังคีย์ลัดของตัวเอง (22 ลูก เรียงต่างจากฆ้อง) — สร้างจาก INSTRUMENTS.ranatek.keyCodes ครั้งเดียว
+  const RANATEK_CODE_MAP = {};
+  (INSTRUMENTS.ranatek.keyCodes || []).forEach((k, idx) => {
+    if (Array.isArray(k)) k.forEach(code => { RANATEK_CODE_MAP[code] = idx; });
+    else RANATEK_CODE_MAP[k] = idx;
+  });
   
   const pressedCodes = new Set();
   
@@ -1105,7 +1118,15 @@ function initGlobalPointerAndKeyboard() {
 
     if (pressedCodes.has(code)) return; 
     
-    if (CODE_MAP_MASTER[code] !== undefined) { 
+    if (currentInstrument === 'ranatek') {
+        if (RANATEK_CODE_MAP[code] !== undefined) {
+            e.preventDefault();
+            unlockAudio();
+            pressedCodes.add(code);
+            typeNote(RANATEK_CODE_MAP[code]);
+            return;
+        }
+    } else if (CODE_MAP_MASTER[code] !== undefined) { 
         e.preventDefault(); 
         unlockAudio(); 
         pressedCodes.add(code); 

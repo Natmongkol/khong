@@ -178,6 +178,32 @@ function renderImeInfographic() {
   const target = document.getElementById('imeInfographic');
   if (!target) return;
 
+  // ระนาดเอก: ผังคีย์ของตัวเอง ไม่ตรงกับ CODE_MAP_MASTER ทั่วไปของฆ้อง
+  if (currentInstrument === 'ranatek') {
+    const inst = getActiveInst();
+    const rowDefs = [
+        { label: 'สูง',    idxs: [17,18,19,20,21] },
+        { label: 'กลาง',   idxs: [10,11,12,13,14,15,16] },
+        { label: 'ต่ำ',    idxs: [3,4,5,6,7,8,9] },
+        { label: 'ต่ำสุด', idxs: [0,1,2] }
+    ];
+    let html = '<div style="font-size:12px; margin-bottom:12px; color:var(--accent); font-weight:600;">ผังปุ่มกดบนคีย์บอร์ดคอมพิวเตอร์ (ระนาดเอก)</div>';
+    rowDefs.forEach(({label, idxs}) => {
+        html += `<div class="ime-row">`;
+        idxs.forEach(idx => {
+            const rangeClass = inst.getNoteRange(idx);
+            const key = inst.keyLabels[idx];
+            html += `<div class="ime-key ${rangeClass}">
+                        <span class="ime-char">${key}</span>
+                        <span class="ime-note">${inst.display[idx]}</span>
+                     </div>`;
+        });
+        html += '</div>';
+    });
+    target.innerHTML = html;
+    return;
+  }
+
   const CODE_MAP_MASTER = {
     'Q':'ดํ', 'W':'รํ', 'E':'มํ', 'R':'ฟํ', 'T':'ซํ', 'Y':'ลํ', 'U':'ทํ',
     'A':'ด', 'S':'ร', 'D':'ม', 'F':'ฟ', 'G':'ซ', 'H':'ล', 'J':'ท',

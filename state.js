@@ -29,6 +29,22 @@ const INSTRUMENTS = {
         },
         octaveMapUp: {0:5, 1:6, 2:8, 3:9, 4:10, 5:12, 6:13, 7:14},
         octaveMapDown: {5:0, 6:1, 8:2, 9:3, 10:4, 12:5, 13:6, 14:7}
+    },
+    ranatek: {
+        id: 'ranatek',
+        name: 'ระนาดเอก',
+        numGongs: 22,
+        freqs: [335.0, 369.9, 408.4, 450.9, 497.8, 549.6, 606.8, 670.0, 739.7, 816.7, 901.8, 995.6, 1099.2, 1213.7, 1340.0, 1479.5, 1633.5, 1803.5, 1991.2, 2198.5, 2427.3, 2680.0],
+        base: ['ซ','ล','ท','ด','ร','ม','ฟ','ซ','ล','ท','ด','ร','ม','ฟ','ซ','ล','ท','ด','ร','ม','ฟ','ซ'],
+        display: ['ซฺฺ','ลฺฺ','ทฺฺ','ดฺ','รฺ','มฺ','ฟฺ','ซฺ','ลฺ','ทฺ','ด','ร','ม','ฟ','ซ','ล','ท','ดํ','รํ','มํ','ฟํ','ซํ'],
+        // ผังปุ่มลัดคีย์บอร์ด เฉพาะระนาดเอก (ไม่ใช้ CODE_MAP_MASTER ทั่วไปแบบฆ้อง เพราะเรียงคีย์ต่างกัน)
+        keyLabels: ['Q','W','E','R','T','Y','U','I/F','G','H','J','K','L',';',"'/C",'V','B','N','M',',','.','/'],
+        keyCodes: ['KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU',['KeyI','KeyF'],'KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon',['Quote','KeyC'],'KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash'],
+        getNoteRange: (idx) => {
+            if (idx <= 9) return 'low';
+            if (idx <= 16) return 'mid';
+            return 'high';
+        }
     }
 };
 
@@ -55,6 +71,7 @@ function switchInstrument(instId) {
     // ปุ่มทัชคีย์บอร์ด สลับตามเครื่องที่เลือก
     document.getElementById('kb-kwy').style.display = (instId === 'kwy') ? 'block' : 'none';
     document.getElementById('kb-kmwy').style.display = (instId === 'kmwy') ? 'block' : 'none';
+    document.getElementById('kb-ranatek').style.display = (instId === 'ranatek') ? 'block' : 'none';
     
     updatePageTitle();
     renderNotation();
@@ -89,6 +106,7 @@ function updatePageTitle() {
 
 const BEATS_PER_BAR = 4;
 const BARS_PER_VAK = 8;       
+const MAX_VAKS = 500;
 
 const state = {
   songName: '', hand: 'right', bpm: 200, numBars: 8, cursorBeat: -1,
@@ -138,6 +156,7 @@ function pushUndo(cellRefs = null) {
   if (undoStack.length > MAX_UNDO) undoStack.shift();
   redoStack = []; 
   updateUndoUI();
+  scheduleAutosave();
 }
 
 function performUndo() {
@@ -182,6 +201,7 @@ function restoreSnapshot(snap) {
       
       document.getElementById('kb-kwy').style.display = (snap.instrument === 'kwy') ? 'block' : 'none';
       document.getElementById('kb-kmwy').style.display = (snap.instrument === 'kmwy') ? 'block' : 'none';
+      document.getElementById('kb-ranatek').style.display = (snap.instrument === 'ranatek') ? 'block' : 'none';
       
       renderImeInfographic();
       renderGongs();
@@ -228,6 +248,10 @@ let audioCtx = null; let audioUnlocked = false; let iosWarned = false;
 
 function appendNewVak() {
   if (chordTimer !== null) { clearTimeout(chordTimer); commitChord(); }
+  if (state.numBars / BARS_PER_VAK >= MAX_VAKS) {
+    showToast(`เพิ่มได้สูงสุด ${MAX_VAKS} วรรค`, 'error');
+    return;
+  }
   pushUndo();
   const currentVak = state.numBars / BARS_PER_VAK;
   state.numBars += BARS_PER_VAK; document.getElementById('numVak').value = currentVak + 1;
@@ -269,6 +293,12 @@ function updateSaveTime(mode) {
 function saveToLocalStorage() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(buildSaveData())); updateSaveTime('localStorage'); } 
   catch(e) { showToast('บันทึกล้มเหลว: ' + e.message, 'error'); }
+}
+
+let autosaveTimer = null;
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveToLocalStorage, 750);
 }
 
 function loadFromLocalStorage() {
@@ -321,5 +351,8 @@ function initSaveSystem() {
   updateSaveUI(); loadFromLocalStorage();
   document.getElementById('saveNowBtn').addEventListener('click', () => { saveToLocalStorage(); showToast('บันทึกใน browser แล้ว', 'success'); });
   const saveFileBtn = document.getElementById('saveFileBtn'); if (saveFileBtn) saveFileBtn.addEventListener('click', saveToCurrentFile);
+  window.addEventListener('pagehide', () => {
+    clearTimeout(autosaveTimer);
+    saveToLocalStorage();
+  });
 }
-

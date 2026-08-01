@@ -24,6 +24,7 @@
     <select id="instSelect" class="inst-select">
       <option value="kwy">◉ เครื่องดนตรี: ฆ้องวงใหญ่</option>
       <option value="kmwy">◉ เครื่องดนตรี: ฆ้องมอญวงใหญ่</option>
+      <option value="ranatek">◉ เครื่องดนตรี: ระนาดเอก</option>
     </select>
   </div>
 
@@ -67,7 +68,7 @@
       <div class="ctrl-block">
         <span class="ctrl-block-label">โครงสร้าง</span>
         <div class="ctrl-block-body">
-          <input type="number" id="numVak" class="tempo-input" min="1" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
+          <input type="number" id="numVak" class="tempo-input" min="1" max="500" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
           <span class="control-label">บรรทัด</span>
         </div>
       </div>
@@ -88,7 +89,7 @@
           </label>
           <label class="toggle" style="cursor: pointer;" title="เสียงเคาะจังหวะที่โน้ตตัวที่ 4 ของทุกห้อง">
             <input type="checkbox" id="metronomeToggle" style="accent-color: var(--accent); margin:0;">
-            <span class="toggle-label" style="font-size: 12px;">🥁 เคาะจังหวะ</span>
+            <span class="toggle-label" style="font-size: 12px;">เคาะจังหวะ</span>
           </label>
         </div>
       </div>
@@ -342,6 +343,44 @@
         <!-- Low: ซฺ,ลฺ -->
         <div class="tk-note low" data-idx="0"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำ</span></div>
         <div class="tk-note low" data-idx="1"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำ</span></div>
+      </div>
+  </div>
+
+  <!-- Keyboard: Ranat Ek -->
+  <div id="kb-ranatek" style="display:none;">
+      <div class="tk-row">
+        <!-- High: ดำ,รำ,มำ,ฟำ,ซำ -->
+        <div class="tk-note high" data-idx="17"><span class="tk-note-name">ด</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="18"><span class="tk-note-name">ร</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="19"><span class="tk-note-name">ม</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="20"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">สูง</span></div>
+        <div class="tk-note high" data-idx="21"><span class="tk-note-name">ซ</span><span class="tk-key-hint">สูง</span></div>
+      </div>
+      <div class="tk-row">
+        <!-- Mid: ด,ร,ม,ฟ,ซ,ล,ท -->
+        <div class="tk-note mid" data-idx="10"><span class="tk-note-name">ด</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="11"><span class="tk-note-name">ร</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="12"><span class="tk-note-name">ม</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="13"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="14"><span class="tk-note-name">ซ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="15"><span class="tk-note-name">ล</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="16"><span class="tk-note-name">ท</span><span class="tk-key-hint">กลาง</span></div>
+      </div>
+      <div class="tk-row">
+        <!-- Low: ซฺ,ลฺ,ทฺ,ดฺ,รฺ,มฺ,ฟฺ -->
+        <div class="tk-note low" data-idx="3"><span class="tk-note-name">ด</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="4"><span class="tk-note-name">ร</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="5"><span class="tk-note-name">ม</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="6"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="7"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="8"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำ</span></div>
+        <div class="tk-note low" data-idx="9"><span class="tk-note-name">ท</span><span class="tk-key-hint">ต่ำ</span></div>
+      </div>
+      <div class="tk-row">
+        <!-- Low sub: ซฺฺ,ลฺฺ,ทฺฺ -->
+        <div class="tk-note low" data-idx="0"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำสุด</span></div>
+        <div class="tk-note low" data-idx="1"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำสุด</span></div>
+        <div class="tk-note low" data-idx="2"><span class="tk-note-name">ท</span><span class="tk-key-hint">ต่ำสุด</span></div>
       </div>
   </div>
 
