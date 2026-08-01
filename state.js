@@ -34,12 +34,12 @@ const INSTRUMENTS = {
         id: 'ranatek',
         name: 'ระนาดเอก',
         numGongs: 22,
-        freqs: [335.0, 369.9, 408.4, 450.9, 497.8, 549.6, 606.8, 670.0, 739.7, 816.7, 901.8, 995.6, 1099.2, 1213.7, 1340.0, 1479.5, 1633.5, 1803.5, 1991.2, 2198.5, 2427.3, 2680.0],
+        freqs: [171.1, 188.9, 208.5, 230.3, 254.2, 280.7, 309.9, 342.2, 377.8, 417.2, 460.6, 508.5, 561.5, 619.9, 684.4, 755.7, 834.4, 921.2, 1017.1, 1123.0, 1239.9, 1368.9],
         base: ['ซ','ล','ท','ด','ร','ม','ฟ','ซ','ล','ท','ด','ร','ม','ฟ','ซ','ล','ท','ด','ร','ม','ฟ','ซ'],
         display: ['ซฺฺ','ลฺฺ','ทฺฺ','ดฺ','รฺ','มฺ','ฟฺ','ซฺ','ลฺ','ทฺ','ด','ร','ม','ฟ','ซ','ล','ท','ดํ','รํ','มํ','ฟํ','ซํ'],
         // ผังปุ่มลัดคีย์บอร์ด เฉพาะระนาดเอก (ไม่ใช้ CODE_MAP_MASTER ทั่วไปแบบฆ้อง เพราะเรียงคีย์ต่างกัน)
-        keyLabels: ['Q','W','E','R','T','Y','U','I/F','G','H','J','K','L',';',"'/C",'V','B','N','M',',','.','/'],
-        keyCodes: ['KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU',['KeyI','KeyF'],'KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon',['Quote','KeyC'],'KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash'],
+        keyLabels: ['Z','X','C','V','B','N','M',',','.','/','A','S','D','F','G','H','J','Q','W','E','R','T'],
+        keyCodes: ['KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash','KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyQ','KeyW','KeyE','KeyR','KeyT'],
         getNoteRange: (idx) => {
             if (idx <= 9) return 'low';
             if (idx <= 16) return 'mid';
@@ -96,6 +96,49 @@ document.getElementById('instSelect').addEventListener('change', (e) => {
     }
 });
 
+// ── โหมดบันทึกโน้ต: "มือเดียว" (one) ตัดแถว/ข้อมูลมือซ้ายออกจริง vs "สองมือ" (two) พฤติกรรมเดิม ──
+let pendingRecordMode = null;
+
+function applyRecordModeUI(mode) {
+  const sel = document.getElementById('recordModeSelect');
+  if (sel && sel.value !== mode) sel.value = mode;
+  // ซ่อนปุ่มลัด Tab/Shift/↑/↓ (เดิมใช้จับคู่โน้ต 2 มือ) เพราะไม่มีความหมายในโหมดมือเดียว
+  const modRow = document.getElementById('tkModifierRow');
+  if (modRow) modRow.style.display = (mode === 'one') ? 'none' : '';
+}
+
+// ใช้ผลของการเปลี่ยนโหมดจริง (ไม่มีการถาม confirm ที่นี่ — เรียกหลังยืนยันแล้ว หรือตอนโหลด/undo/import)
+function setRecordMode(mode) {
+  state.recordMode = mode;
+  if (mode === 'one') {
+    // ตัดระบบมือซ้ายออกจริง ไม่ใช่แค่ซ่อนด้วย CSS: เคลียร์ข้อมูลโน้ตมือซ้ายทั้งหมด
+    state.notes.left.fill(null);
+    state.hand = 'right';
+    // ยกเลิกปุ่มลัดจับคู่มือที่อาจค้างอยู่ (Tab/Shift/↑/↓)
+    if (typeof tabHeld !== 'undefined') { tabHeld = shiftHeld = arrowUpHeld = arrowDownHeld = false; }
+  }
+  applyRecordModeUI(mode);
+  renderNotation();
+}
+
+function switchRecordMode(mode) {
+  if (mode === state.recordMode) return;
+  const hasLeftNotes = state.notes.left.some(n => n !== null);
+  if (mode === 'one' && hasLeftNotes) {
+    pendingRecordMode = mode;
+    document.getElementById('switchRecordModeModal').classList.add('show');
+    const sel = document.getElementById('recordModeSelect');
+    if (sel) sel.value = state.recordMode; // revert ตัวเลือกจนกว่าจะยืนยัน
+  } else {
+    pushUndo();
+    setRecordMode(mode);
+  }
+}
+
+document.getElementById('recordModeSelect').addEventListener('change', (e) => {
+  switchRecordMode(e.target.value);
+});
+
 function updatePageTitle() {
   document.title = state.songName && state.songName.trim() !== '' 
     ? `${state.songName} — ${getActiveInst().name}` 
@@ -112,6 +155,7 @@ const state = {
   songName: '', hand: 'right', bpm: 200, numBars: 8, cursorBeat: -1,
   isRecording: true, isPlaying: false, playStart: 0, currentBeat: -1,
   notes: { right: [], left: [] }, clipboardVak: null, repeats: {}, sections: {}, lineLengths: {},
+  recordMode: 'two', // 'two' = สองมือ (default, พฤติกรรมเดิม) | 'one' = มือเดียว (ใช้เฉพาะแถว right)
   playMode: 'all', selectionHands: ['right', 'left'], _editingSection: null,
   isEditMode: false, isMultiSelectMode: false, selectedRooms: new Set(), currentPlayingLine: null,
   selectedLine: null,
@@ -136,7 +180,7 @@ const MAX_UNDO = 40;
 //    นำเข้าไฟล์, วางหลายห้อง ฯลฯ) ซึ่งเกิดไม่บ่อยเท่า จึง copy ทั้งอาเรย์แบบเดิมไว้เพื่อความถูกต้อง/ปลอดภัยสูงสุด
 function _snapMeta() {
   return {
-    instrument: currentInstrument,
+    instrument: currentInstrument, recordMode: state.recordMode,
     cursorBeat: state.cursorBeat, hand: state.hand, numBars: state.numBars,
     repeats: {...state.repeats}, sections: {...state.sections}, lineLengths: {...state.lineLengths}
   };
@@ -219,6 +263,8 @@ function restoreSnapshot(snap) {
   state.cursorBeat = snap.cursorBeat; state.hand = snap.hand;
   state.repeats = snap.repeats || {}; state.sections = snap.sections || {};
   state.lineLengths = snap.lineLengths || {};
+  state.recordMode = snap.recordMode || 'two';
+  applyRecordModeUI(state.recordMode);
   state._editingSection = null;
   state.selectedLine = null;
   state.isMultiSelectMode = false;
@@ -274,11 +320,14 @@ function buildSaveData() {
     type: 'khong-wong-yai-notation', 
     version: 5, 
     instrument: currentInstrument,
+    recordMode: state.recordMode,
     songName: state.songName, 
     tempo: state.bpm, 
     vak: state.numBars / BARS_PER_VAK,
     repeats: state.repeats || {}, sections: state.sections || {}, lineLengths: state.lineLengths || {}, 
-    notes: { right: [...state.notes.right], left: [...state.notes.left] }, 
+    notes: state.recordMode === 'one'
+      ? { right: [...state.notes.right] }
+      : { right: [...state.notes.right], left: [...state.notes.left] }, 
     savedAt: new Date().toISOString()
   };
 }

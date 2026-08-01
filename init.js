@@ -12,6 +12,7 @@ function init() {
   updateUndoUI(); 
   renderImeInfographic();
 
+  applyRecordModeUI(state.recordMode);
   initTopControls();
   initExportImportMenus();
   initFocusMode();
@@ -75,6 +76,22 @@ function initTopControls() {
         
         switchInstrument(pendingInstrument);
         pendingInstrument = null;
+    }
+  });
+
+  document.getElementById('cancelRecordModeBtn').addEventListener('click', () => {
+    document.getElementById('switchRecordModeModal').classList.remove('show');
+    const sel = document.getElementById('recordModeSelect');
+    if (sel) sel.value = state.recordMode; // ยกเลิก — คืนค่า dropdown กลับไปโหมดปัจจุบัน
+    pendingRecordMode = null;
+  });
+
+  document.getElementById('confirmRecordModeBtn').addEventListener('click', () => {
+    document.getElementById('switchRecordModeModal').classList.remove('show');
+    if (pendingRecordMode) {
+      pushUndo();
+      setRecordMode(pendingRecordMode);
+      pendingRecordMode = null;
     }
   });
 
@@ -1075,6 +1092,7 @@ function initGlobalPointerAndKeyboard() {
   const _MODAL_ESCAPE_MAP = [
     { modalId: 'clearConfirmModal',  cancelId: 'cancelClearBtn' },
     { modalId: 'switchInstModal',    cancelId: 'cancelSwitchBtn' },
+    { modalId: 'switchRecordModeModal', cancelId: 'cancelRecordModeBtn' },
     { modalId: 'playRangeModal',     cancelId: 'cancelPlayRangeBtn' },
     { modalId: 'exportMp3Modal',     cancelId: null,
       close: () => { if (!isExporting) document.getElementById('exportMp3Modal').classList.remove('show'); } },
@@ -1111,10 +1129,12 @@ function initGlobalPointerAndKeyboard() {
       if (code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
     }
 
-    if (code === 'Tab') { tabHeld = true; updateModUIState(); e.preventDefault(); return; }
-    if (code === 'ShiftLeft' || code === 'ShiftRight') { shiftHeld = true; updateModUIState(); e.preventDefault(); return; }
-    if (code === 'ArrowUp') { arrowUpHeld = true; updateModUIState(); e.preventDefault(); return; }
-    if (code === 'ArrowDown') { arrowDownHeld = true; updateModUIState(); e.preventDefault(); return; }
+    if (state.recordMode !== 'one') {
+      if (code === 'Tab') { tabHeld = true; updateModUIState(); e.preventDefault(); return; }
+      if (code === 'ShiftLeft' || code === 'ShiftRight') { shiftHeld = true; updateModUIState(); e.preventDefault(); return; }
+      if (code === 'ArrowUp') { arrowUpHeld = true; updateModUIState(); e.preventDefault(); return; }
+      if (code === 'ArrowDown') { arrowDownHeld = true; updateModUIState(); e.preventDefault(); return; }
+    }
 
     if (pressedCodes.has(code)) return; 
     

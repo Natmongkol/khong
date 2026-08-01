@@ -839,9 +839,12 @@ function exportNotation() {
     type: 'khong-wong-yai-notation', 
     version: 5, 
     instrument: currentInstrument,
+    recordMode: state.recordMode,
     songName: state.songName, tempo: state.bpm, 
     vak: state.numBars / BARS_PER_VAK, repeats: state.repeats || {}, sections: state.sections || {}, lineLengths: state.lineLengths || {},
-    notes: { right: [...state.notes.right], left: [...state.notes.left] } 
+    notes: state.recordMode === 'one'
+      ? { right: [...state.notes.right] }
+      : { right: [...state.notes.right], left: [...state.notes.left] }
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const safeName = getSafeFilename(state.songName); const a = document.createElement('a'); 

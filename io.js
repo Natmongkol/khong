@@ -30,15 +30,18 @@ function exportText() {
       const ln = state.notes.left[globalBeat];
       
       rightLine += (rn !== null && rn !== undefined && displayNotes[rn]) ? displayNotes[rn] : "-";
-      leftLine += (ln !== null && ln !== undefined && displayNotes[ln]) ? displayNotes[ln] : "-";
+      if (state.recordMode !== 'one') {
+        leftLine += (ln !== null && ln !== undefined && displayNotes[ln]) ? displayNotes[ln] : "-";
+      }
       
       if ((b + 1) % BEATS_PER_BAR === 0) { 
         rightLine += "  "; 
-        leftLine += "  "; 
+        if (state.recordMode !== 'one') leftLine += "  "; 
       }
     }
     output += rightLine.trimEnd() + "\n";
-    output += leftLine.trimEnd() + "\n\n";
+    if (state.recordMode !== 'one') output += leftLine.trimEnd() + "\n";
+    output += "\n";
   }
 
   const blob = new Blob([output.trim()], { type: 'text/plain;charset=utf-8' });
@@ -182,7 +185,9 @@ function applyTextImport(text) {
   state.notes.right.fill(null);
   state.notes.left.fill(null);
   for (let i = 0; i < rightNotes.length; i++) state.notes.right[i] = rightNotes[i];
-  for (let i = 0; i < leftNotes.length; i++)  state.notes.left[i]  = leftNotes[i];
+  if (state.recordMode !== 'one') {
+    for (let i = 0; i < leftNotes.length; i++) state.notes.left[i] = leftNotes[i];
+  }
   state.lineLengths = {};
 
   state.cursorBeat = 0;
@@ -263,6 +268,11 @@ function applyImport(data, silent = false) {
     state.notes.right = clampNotes(data.notes.right);
     state.notes.left  = clampNotes(data.notes.left);
   }
+
+  // โหมดบันทึกโน้ต: ใช้ค่าที่บันทึกไว้ในไฟล์ ถ้าไม่มี (ไฟล์เก่าก่อนมีฟีเจอร์นี้) ให้ถือเป็นสองมือ (ค่าเริ่มต้นเดิม)
+  state.recordMode = (data.recordMode === 'one') ? 'one' : 'two';
+  if (state.recordMode === 'one') { state.notes.left.fill(null); state.hand = 'right'; }
+  applyRecordModeUI(state.recordMode);
   
   state.cursorBeat = 0; ensureCapacity(); renderNotation();
 }
@@ -309,7 +319,7 @@ function exportPDF() {
       const rn = state.notes.right[globalBeat];
       const ln = state.notes.left[globalBeat];
       topCells += `<td class="nc${barEndClass}">${noteHTML(rn)}</td>`;
-      botCells += `<td class="nc${barEndClass}">${noteHTML(ln)}</td>`;
+      if (state.recordMode !== 'one') botCells += `<td class="nc${barEndClass}">${noteHTML(ln)}</td>`;
     }
 
     const hasRepeat = state.repeats && state.repeats[lineNum] !== undefined;
@@ -319,7 +329,7 @@ function exportPDF() {
         <table class="notation-table" style="width: ${tableWidth}%;">
           <tbody>
             <tr class="top-row">${topCells}</tr>
-            <tr class="bot-row">${botCells}</tr>
+            ${state.recordMode !== 'one' ? `<tr class="bot-row">${botCells}</tr>` : ''}
           </tbody>
         </table>
         ${hasRepeat ? `<div class="repeat-label" style="width: ${tableWidth}%;">กลับต้น</div>` : ''}

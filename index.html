@@ -162,6 +162,13 @@
 
   <section class="panel">
     <h3 id="notationSubtitle" style="margin:0 0 12px;">ทางฆ้องวงใหญ่</h3>
+    <div class="record-mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+      <label for="recordModeSelect" style="font-size:13px; color:var(--muted); white-space:nowrap;">โหมดบันทึกโน้ต:</label>
+      <select id="recordModeSelect" class="inst-select">
+        <option value="two">สองมือ</option>
+        <option value="one">มือเดียว</option>
+      </select>
+    </div>
     <div class="playback-bar-wrap"><div class="playback-bar-fill" id="playbackBar"></div></div>
     <div style="height:10px"></div>
     <div class="notation-wrapper">
@@ -284,7 +291,7 @@
     <div class="tk-action redo" id="tkRedoBtn" style="flex:1;">↻</div>
   </div>
 
-  <div class="tk-modifier-row">
+  <div class="tk-modifier-row" id="tkModifierRow">
     <div class="tk-mod tab-mod"   id="tkModTab">  <span class="mod-key">Tab</span>  คู่ 8</div>
     <div class="tk-mod shift-mod" id="tkModShift"><span class="mod-key">Shift</span>คู่ 4</div>
     <div class="tk-mod up-mod"    id="tkModUp">   <span class="mod-key">↑</span>  มือขวา</div>
@@ -416,6 +423,18 @@
     <div class="modal-actions">
       <button class="btn" id="cancelSwitchBtn">ยกเลิก</button>
       <button class="btn danger" id="confirmSwitchBtn">เปลี่ยนและล้างตาราง</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal สำหรับ ยืนยันการสลับเป็นโหมดมือเดียว (มีข้อมูลมือซ้ายอยู่) -->
+<div class="modal-overlay" id="switchRecordModeModal">
+  <div class="modal-content">
+    <h3 class="modal-title">เปลี่ยนเป็นโหมดมือเดียว</h3>
+    <p class="modal-body">คุณมีโน้ตในแถวมือซ้ายอยู่แล้ว การสลับเป็น "มือเดียว" จะลบข้อมูลโน้ตมือซ้ายทั้งหมดออกจากเพลงนี้ คุณต้องการดำเนินการต่อหรือไม่?</p>
+    <div class="modal-actions">
+      <button class="btn" id="cancelRecordModeBtn">ยกเลิก</button>
+      <button class="btn danger" id="confirmRecordModeBtn">เปลี่ยนและลบโน้ตมือซ้าย</button>
     </div>
   </div>
 </div>

@@ -264,7 +264,10 @@ function typeNote(baseIdx) {
   let leftNote = null, rightNote = null;
   const inst = getActiveInst();
 
-  if (tabHeld) {
+  if (state.recordMode === 'one') {
+      // โหมดมือเดียว: ไม่มีแถวมือซ้าย ปุ่มลัด Tab/Shift/↑/↓ (จับคู่ 2 มือ) จึงไม่มีผลใดๆ
+      rightNote = baseIdx;
+  } else if (tabHeld) {
       if (currentInstrument === 'kwy' || currentInstrument === 'ranatek') {
           let lo = baseIdx, hi = baseIdx + 7;
           if (hi >= inst.numGongs) { hi = baseIdx; lo = baseIdx - 7; }
