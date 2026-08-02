@@ -1,212 +1,17 @@
-// ===== io.js: text import/export, PDF export =====
-
-function exportText() {
-  if (chordTimer) { clearTimeout(chordTimer); commitChord(); }
-  let output = "";
-  if (state.songName.trim()) output += `ชื่อเพลง: ${state.songName}\n`;
-  output += `เครื่องดนตรี: ${getActiveInst().name}\n\n`;
-  
-  const displayNotes = getActiveInst().display;
-
-  let currentSectionStartLine = 1;
-  const totalVaks = Math.ceil(state.numBars / BARS_PER_VAK);
-  
-  for (let v = 0; v < totalVaks; v++) {
-    const lineNum = v + 1;
-    if (state.sections && state.sections[lineNum] !== undefined) {
-        currentSectionStartLine = lineNum;
-        output += `\n--- ${state.sections[lineNum]} ---\n`;
-    }
-    const displayLineNum = lineNum - currentSectionStartLine + 1;
-    const barsInThisLine = state.lineLengths[lineNum] !== undefined ? state.lineLengths[lineNum] : BARS_PER_VAK;
-    const beatsPerLine = barsInThisLine * BEATS_PER_BAR;
-    
-    output += `[บรรทัดที่ ${displayLineNum}]\n`;
-    let rightLine = "";
-    let leftLine = "";
-    for (let b = 0; b < beatsPerLine; b++) {
-      const globalBeat = v * 32 + b; 
-      const rn = state.notes.right[globalBeat];
-      const ln = state.notes.left[globalBeat];
-      
-      rightLine += (rn !== null && rn !== undefined && displayNotes[rn]) ? displayNotes[rn] : "-";
-      if (state.recordMode !== 'one') {
-        leftLine += (ln !== null && ln !== undefined && displayNotes[ln]) ? displayNotes[ln] : "-";
-      }
-      
-      if ((b + 1) % BEATS_PER_BAR === 0) { 
-        rightLine += "  "; 
-        if (state.recordMode !== 'one') leftLine += "  "; 
-      }
-    }
-    output += rightLine.trimEnd() + "\n";
-    if (state.recordMode !== 'one') output += leftLine.trimEnd() + "\n";
-    output += "\n";
-  }
-
-  const blob = new Blob([output.trim()], { type: 'text/plain;charset=utf-8' });
-  const safeName = getSafeFilename(state.songName); 
-  const a = document.createElement('a'); 
-  a.href = URL.createObjectURL(blob); 
-  a.download = `${safeName}_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.txt`;
-  a.click();
-}
-
-const isIframe = window !== window.parent;
-const hasFSAPI = !isIframe && ('showSaveFilePicker' in window) && ('showOpenFilePicker' in window);
-
-async function executeImport(fileType) {
-  if (hasFSAPI) {
-    try {
-      const opts = fileType === 'json' 
-        ? [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
-        : [{ description: 'Text Files', accept: { 'text/plain': ['.txt'] } }];
-      const [handle] = await window.showOpenFilePicker({ types: opts, multiple: false });
-      const file = await handle.getFile(); await processImportFile(file, handle);
-    } catch(e) { if (e.name !== 'AbortError') showToast('เปิดไฟล์ไม่สำเร็จ: ' + e.message, 'error'); }
-  } else {
-    const picker = document.createElement('input'); picker.type = 'file'; 
-    picker.accept = fileType === 'json' ? '.json,application/json' : '.txt,text/plain';
-    picker.addEventListener('change', async () => {
-      const file = picker.files[0]; if (!file) return; await processImportFile(file, null); picker.value = '';
-    });
-    picker.click();
-  }
-}
-
-async function processImportFile(file, handle) {
-  const btn = document.getElementById('importMainBtn'); const name = file.name.toLowerCase(); const mime = (file.type || '').toLowerCase();
-  const isJson  = name.endsWith('.json') || mime === 'application/json';
-  const isTxt   = name.endsWith('.txt')  || mime === 'text/plain';
-  const originalBtnText = btn.textContent;
-
-  try {
-    btn.textContent = 'กำลังประมวลผล...'; btn.disabled = true;
-    if (isJson) {
-      const text = await file.text(); applyImport(JSON.parse(text));
-      if (handle) { currentFileHandle = handle; updateSaveUI(); }
-      showToast('เปิดไฟล์สำเร็จ', 'success'); return;
-    }
-
-    let text = '';
-    if (isTxt) text = await file.text();
-    else { showToast('ไม่รองรับไฟล์ประเภทนี้', 'error'); return; }
-
-    applyTextImport(text); currentFileHandle = null; updateSaveUI();
-  } catch (err) { showToast('นำเข้าไม่สำเร็จ: ' + err.message, 'error'); }
-  finally { btn.textContent = originalBtnText; btn.disabled = false; }
-}
-
-function parseNotesFromText(text) {
-  return text.match(/(ดํ|รํ|มํ|ฟํ|ซํ|ลํ|ทํ|ดฺ|รฺ|มฺ|ฟฺ|ซฺ|ลฺ|ทฺ|ด|ร|ม|ฟ|ซ|ล|ท|\-|—|–|_|~|x)/g) || [];
-}
+// ===== io.js: PDF import/export and project-file restoration =====
 
 const REST_TOKENS = new Set(['-','—','–','x','_','~']);
 
-function tokensToNoteArray(tokens) { 
-    return tokens.map(t => {
-        if(REST_TOKENS.has(t)) return null;
-        const idx = getActiveInst().display.indexOf(t);
-        return idx !== -1 ? idx : null; // Drop if note doesn't exist in current inst
-    }); 
-}
-
-function applyTextImport(text) {
-  const rawLines = text.split(/\r?\n/);
-  const groups = []; 
-  let currentGroup = [];
-
-  for (const line of rawLines) {
-    const tokens = parseNotesFromText(line);
-    if (tokens.length > 0) {
-      currentGroup.push(tokens);
-    } else {
-      if (currentGroup.length > 0) {
-        groups.push(currentGroup);
-        currentGroup = [];
-      }
-    }
-  }
-  if (currentGroup.length > 0) groups.push(currentGroup);
-
-  if (groups.length === 0) {
-    throw new Error("ไม่พบข้อมูลโน้ตเพลงไทยในไฟล์");
-  }
-
-  const allGroupsHaveTwoLines = groups.every(g => g.length === 2);
-  const allGroupsHaveOneLine  = groups.every(g => g.length === 1);
-  const isSingleGroup = groups.length === 1;
-  const singleGroupEven = isSingleGroup && (groups[0].length % 2 === 0);
-
-  let rightNotes = [];
-  let leftNotes  = [];
-
-  if (allGroupsHaveTwoLines || (isSingleGroup && singleGroupEven && !allGroupsHaveOneLine)) {
-    const pairsToProcess = allGroupsHaveTwoLines
-      ? groups.map(g => [g[0], g[1]])
-      : (() => {
-          const pairs = [];
-          for (let i = 0; i < groups[0].length; i += 2) {
-            pairs.push([groups[0][i], groups[0][i+1] || []]);
-          }
-          return pairs;
-        })();
-
-    for (const [topTokens, bottomTokens] of pairsToProcess) {
-      const topArr    = tokensToNoteArray(topTokens);
-      const bottomArr = tokensToNoteArray(bottomTokens);
-
-      const pairMax = Math.max(topArr.length, bottomArr.length);
-      const pairTarget = Math.max(32, Math.ceil(pairMax / 32) * 32);
-
-      const paddedTop    = [...topArr];
-      const paddedBottom = [...bottomArr];
-      while (paddedTop.length    < pairTarget) paddedTop.push(null);
-      while (paddedBottom.length < pairTarget) paddedBottom.push(null);
-
-      rightNotes.push(...paddedTop);
-      leftNotes.push(...paddedBottom);
-    }
-
-  } else {
-    const allTokens = groups.flat(2);
-    const allArr = tokensToNoteArray(allTokens.flat ? allTokens : allTokens.reduce((a,b) => a.concat(b), []));
-    rightNotes = allArr;
-    leftNotes  = new Array(allArr.length).fill(null);
-  }
-
-  const totalNotes = Math.max(rightNotes.length, leftNotes.length);
-  const vaks = Math.max(1, Math.ceil(totalNotes / 32));
-  state.numBars = vaks * BARS_PER_VAK;
-  document.getElementById('numVak').value = vaks;
-  ensureCapacity();
-  pushUndo();
-
-  state.notes.right.fill(null);
-  state.notes.left.fill(null);
-  for (let i = 0; i < rightNotes.length; i++) state.notes.right[i] = rightNotes[i];
-  if (state.recordMode !== 'one') {
-    for (let i = 0; i < leftNotes.length; i++) state.notes.left[i] = leftNotes[i];
-  }
-  state.lineLengths = {};
-
-  state.cursorBeat = 0;
-  if (chordTimer) { clearTimeout(chordTimer); chordTimer = null; }
-  renderNotation();
-
-  const modeLabel = (allGroupsHaveTwoLines || (isSingleGroup && singleGroupEven && !allGroupsHaveOneLine))
-    ? `แบ่งมือ ${groups.length || Math.ceil(groups[0].length/2)} วรรค`
-    : `ไม่แบ่งมือ ${vaks} วรรค`;
-  showToast(`นำเข้าสำเร็จ · ${modeLabel}`, 'success');
-}
-
-function applyImport(data, silent = false) {
+function restoreProjectData(data, preserveUndo = false) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid project data');
+  if (!data.notes || !Array.isArray(data.notes.right)) throw new Error('ข้อมูลบันทึกไม่สมบูรณ์');
 
   const importedInstrument = data.instrument || currentInstrument;
   if (!Object.prototype.hasOwnProperty.call(INSTRUMENTS, importedInstrument)) {
     throw new Error('Unknown instrument in imported project');
   }
+
+  if (preserveUndo) pushUndo();
 
   if (importedInstrument !== currentInstrument) {
       currentInstrument = importedInstrument;
@@ -223,7 +28,6 @@ function applyImport(data, silent = false) {
       renderGongs();
   }
     
-  if (!silent) pushUndo();
   if (typeof data.songName === 'string') { state.songName = data.songName.slice(0, 200); document.getElementById('songName').value = state.songName; } 
   else { state.songName = ''; document.getElementById('songName').value = ''; }
   updatePageTitle();
@@ -257,17 +61,13 @@ function applyImport(data, silent = false) {
   state._editingSection = null;
   state.selectedLine = null;
   
-  if (data.notes) {
-    const maxIdx = getActiveInst().numGongs - 1;
-    // clamp note indices ให้อยู่ใน range ของ instrument ปัจจุบัน
-    // ป้องกัน inst.display[idx] / inst.freqs[idx] เป็น undefined เมื่อ import ข้าม instrument
-    const maxBeats = vak * BARS_PER_VAK * BEATS_PER_BAR;
-    const clampNotes = (arr) => Array.isArray(arr)
-      ? arr.slice(0, maxBeats).map(v => (v == null ? null : (Number.isInteger(v) && v >= 0 && v <= maxIdx) ? v : null))
-      : [];
-    state.notes.right = clampNotes(data.notes.right);
-    state.notes.left  = clampNotes(data.notes.left);
-  }
+  const maxIdx = getActiveInst().numGongs - 1;
+  const maxBeats = vak * BARS_PER_VAK * BEATS_PER_BAR;
+  const clampNotes = (arr) => Array.isArray(arr)
+    ? arr.slice(0, maxBeats).map(v => (v == null ? null : (Number.isInteger(v) && v >= 0 && v <= maxIdx) ? v : null))
+    : [];
+  state.notes.right = clampNotes(data.notes.right);
+  state.notes.left  = clampNotes(data.notes.left);
 
   // โหมดบันทึกโน้ต: ใช้ค่าที่บันทึกไว้ในไฟล์ ถ้าไม่มี (ไฟล์เก่าก่อนมีฟีเจอร์นี้) ให้ถือเป็นสองมือ (ค่าเริ่มต้นเดิม)
   state.recordMode = (data.recordMode === 'one') ? 'one' : 'two';
@@ -350,7 +150,6 @@ function exportPDF() {
 <meta name="viewport" content="width=1024">
 <title>${songTitle}</title> 
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   @page {
     size: A4 portrait;
@@ -421,19 +220,25 @@ function exportPDF() {
       const blob = new Blob([printHTML], { type: 'text/html;charset=utf-8' });
       const blobUrl = URL.createObjectURL(blob);
 
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // เปิดจาก user gesture โดยตรง; ไม่ต้องรอโหลดทรัพยากรภายนอกจึงใช้ขณะออฟไลน์ได้
+      let opened = window.open(blobUrl, '_blank');
+      if (opened) opened.opener = null;
+      if (!opened) {
+        // สำรองสำหรับเบราว์เซอร์ที่ไม่ยอมให้ window.open เปิด Blob URL โดยตรง
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
 
       // คืน memory หลังเปิด tab — หน้าใหม่โหลดเสร็จแล้วค่อย revoke
       setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-      showToast('เปิดหน้าตารางโน้ต PDF แล้ว', 'success');
+      showToast('เปิดหน้าพิมพ์ PDF แล้ว — เลือก “พิมพ์/Save” เพื่อบันทึกไฟล์', 'success');
   } catch(e) {
-      showToast('ไม่สามารถสร้างหน้า PDF ได้ในหน้าจอนี้', 'error');
+      reportSaveFailure('เปิดหน้าพิมพ์ PDF', e);
   }
 }
 
@@ -466,11 +271,9 @@ const PDF_IMPORT = (() => {
   let pdfLibLoading = false;
   let pdfLibCallbacks = [];
 
-  // mirror หลายแหล่ง กันกรณี CDN เจ้าใดเจ้าหนึ่งล่ม/ถูกบล็อกในบางเครือข่าย/องค์กร
-  const PDFJS_MIRRORS = [
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
-    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'
+  // ใช้สำเนาที่มากับแอป จึงนำเข้า PDF ได้ขณะออฟไลน์.
+  const PDFJS_SOURCES = [
+    'pdf.min.js'
   ];
   const PDFJS_LOAD_TIMEOUT_MS = 10000; // กันกรณี CDN โหลดค้าง (ไม่ error ไม่ load) ไม่ให้รอไปตลอดกาล
 
@@ -498,23 +301,15 @@ const PDF_IMPORT = (() => {
       if (pdfLibLoading) return;
       pdfLibLoading = true;
 
-      // เช็คก่อนเลยว่ามีเน็ตไหม — ไม่งั้นจะปล่อยให้รอจน timeout เฉยๆโดยเปล่าประโยชน์ (แอปนี้ใช้ offline ได้เกือบทั้งหมด ยกเว้นฟีเจอร์นี้ที่ต้องโหลด pdf.js ครั้งแรก)
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        const err = new Error('ไม่มีการเชื่อมต่ออินเทอร์เน็ต — ฟีเจอร์ "นำเข้า PDF" ต้องใช้เน็ตเพื่อโหลดตัวอ่านไฟล์ (pdf.js) ในการใช้งานครั้งแรกเท่านั้น');
-        pdfLibCallbacks.forEach(cb => cb.reject(err));
-        pdfLibCallbacks = []; pdfLibLoading = false;
-        return;
-      }
-
       (async () => {
         let lastErr = null;
-        for (const src of PDFJS_MIRRORS) {
+        for (const src of PDFJS_SOURCES) {
           try {
             await loadScriptWithTimeout(src, PDFJS_LOAD_TIMEOUT_MS);
 
             // ปิด Worker ตั้งแต่ต้น — รัน PDF parsing บน main thread โดยไม่มี warning
-            // workerSrc = '' บังคับให้ pdf.js ใช้ FakeWorker แบบ silent
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+            // ไฟล์ worker ถูกฝังไว้กับแอปด้วย ไม่ต้องพึ่ง CDN หรืออินเทอร์เน็ต.
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
 
             // ปิด console.warn ชั่วคราว เฉพาะตอน setup เพื่อซ่อน "Setting up fake worker"
             const _warn = console.warn;
@@ -533,7 +328,7 @@ const PDF_IMPORT = (() => {
           }
         }
         // ทุก mirror ล้มเหลว (หรือ setup พัง) — ยอมแพ้ พร้อม reset ให้กดลองใหม่ได้
-        const err = new Error('โหลด pdf.js ไม่สำเร็จ (ลองแล้วทุกแหล่ง) — ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่' + (lastErr ? `: ${lastErr.message}` : ''));
+        const err = new Error('โหลดตัวอ่าน PDF ไม่สำเร็จ — ตรวจสอบว่าไฟล์ pdf.min.js และ pdf.worker.min.js อยู่ในโฟลเดอร์เดียวกับแอป' + (lastErr ? `: ${lastErr.message}` : ''));
         pdfLibCallbacks.forEach(cb => cb.reject(err));
         pdfLibCallbacks = [];
         pdfLibLoading = false;
@@ -697,7 +492,7 @@ const PDF_IMPORT = (() => {
 
     pushUndo();
 
-    state.songName = parsed.songName || '';
+    state.songName = (parsed.songName || '').slice(0, 200);
     document.getElementById('songName').value = state.songName;
     updatePageTitle();
 

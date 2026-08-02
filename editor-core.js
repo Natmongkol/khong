@@ -326,7 +326,7 @@ function commitChord() {
   if (left !== null) state.notes.left[cursor] = left;
   if (right !== null) state.notes.right[cursor] = right;
   
-  advanceCursor(); patchNotation();
+  advanceCursor(); patchNotation([cursor]);
 }
 
 function insertRest() {
@@ -336,7 +336,7 @@ function insertRest() {
   const cursor = state.cursorBeat;
   pushUndo([{ hand: 'left', idx: cursor }, { hand: 'right', idx: cursor }]);
   state.notes.left[cursor] = null; state.notes.right[cursor] = null;
-  advanceCursor(); patchNotation();
+  advanceCursor(); patchNotation([cursor]);
 }
 
 function deleteAtCursor() {
@@ -345,7 +345,7 @@ function deleteAtCursor() {
   const beat = state.cursorBeat;
   const hasContent = state.notes.left[beat] !== null || state.notes.right[beat] !== null;
   const targetBeat = hasContent ? beat : (beat > 0 ? beat - 1 : null);
-  if (targetBeat === null) { patchNotation(); return; } // ไม่มีอะไรให้ลบจริงๆ — ไม่ต้องสร้าง undo entry เปล่าๆ
+  if (targetBeat === null) { patchNotation([]); return; } // ไม่มีอะไรให้ลบจริงๆ — ไม่ต้องสร้าง undo entry เปล่าๆ
 
   pushUndo([{ hand: 'left', idx: targetBeat }, { hand: 'right', idx: targetBeat }]);
   if (hasContent) {
@@ -354,14 +354,14 @@ function deleteAtCursor() {
     state.cursorBeat = targetBeat;
     state.notes.left[targetBeat] = null; state.notes.right[targetBeat] = null;
   }
-  patchNotation();
+  patchNotation([targetBeat]);
 }
 
 function moveCursorBy(delta) {
   if (delta === 1) { advanceCursor(); } else {
     state.cursorBeat = Math.max(0, state.cursorBeat + delta);
   }
-  patchNotation();
+  patchNotation([]);
 }
 
 function getSafeFilename(name) {
@@ -404,30 +404,45 @@ function pasteRoom() {
     showToast('วางโน้ต (ทั้ง 2 มือ) เรียบร้อย', 'success');
 }
 
+// ── รวม selectedRooms (เช่น "right:3","left:3","right:4") ให้เป็น Map<บาร์, {right,left}> ──
+// เพื่อรู้ว่าแต่ละห้องที่เลือกไว้ ครอบคลุมมือไหนบ้าง (จะได้ไม่ไปยุ่งกับมืออีกข้างที่ไม่ได้เลือก)
+function _groupSelectedRoomsByBar() {
+    const map = new Map();
+    state.selectedRooms.forEach(key => {
+        const [hand, barStr] = key.split(':');
+        const bar = parseInt(barStr, 10);
+        if (!map.has(bar)) map.set(bar, { right: false, left: false });
+        map.get(bar)[hand] = true;
+    });
+    return map;
+}
+
 function copyMultiRooms() {
     if (!state.selectedRooms || state.selectedRooms.size === 0) return;
-    const rooms = Array.from(state.selectedRooms).map(str => {
-        const parts = str.split(':'); return { hand: parts[0], bar: parseInt(parts[1]) };
-    });
-    rooms.sort((a,b) => a.bar - b.bar);
-    
-    const minBar = rooms[0].bar;
-    const maxBar = rooms[rooms.length-1].bar;
+    const roomMap = _groupSelectedRoomsByBar();
+    const bars = Array.from(roomMap.keys()).sort((a, b) => a - b);
+    const minBar = bars[0];
+    const maxBar = bars[bars.length - 1];
     const copiedLength = (maxBar - minBar + 1) * 4;
     const data = { right: new Array(copiedLength).fill(null), left: new Array(copiedLength).fill(null) };
-    
-    rooms.forEach(r => {
-        const startIdx = (r.bar - minBar) * 4;
-        const globalBeat = r.bar * 4;
+    // activeRight/activeLeft: จำไว้ต่อจังหวะว่าตอนคัดลอก มือนั้นถูกเลือกจริงไหม
+    // (ใช้ตอนวาง เพื่อไม่ให้ไปเขียนทับ/ล้างมือที่ไม่ได้เลือกตอนคัดลอก)
+    const activeRight = new Array(copiedLength).fill(false);
+    const activeLeft  = new Array(copiedLength).fill(false);
+
+    bars.forEach(bar => {
+        const hands = roomMap.get(bar);
+        const startIdx = (bar - minBar) * 4;
+        const globalBeat = bar * 4;
         for (let i = 0; i < 4; i++) {
-            data.right[startIdx + i] = state.notes.right[globalBeat + i];
-            data.left[startIdx + i]  = state.notes.left[globalBeat + i];
+            if (hands.right) { data.right[startIdx + i] = state.notes.right[globalBeat + i]; activeRight[startIdx + i] = true; }
+            if (hands.left)  { data.left[startIdx + i]  = state.notes.left[globalBeat + i];  activeLeft[startIdx + i]  = true; }
         }
     });
-    
-    customClipboard = { type: 'room', data, length: copiedLength, originalHand: 'right' };
-    showToast(`คัดลอก ${rooms.length} ห้องเรียบร้อย`, 'success');
-    
+
+    customClipboard = { type: 'room', data, length: copiedLength, activeRight, activeLeft, originalHand: 'right' };
+    showToast(`คัดลอก ${bars.length} ห้องเรียบร้อย`, 'success');
+
     state.isMultiSelectMode = false;
     state.selectedRooms.clear();
     document.getElementById('multiSelectActionMenu').classList.add('hidden');
@@ -439,30 +454,60 @@ function pasteMultiRooms() {
     pushUndo();
     const len = customClipboard.length;
 
-    const maxNeeded = Math.max(...Array.from(state.selectedRooms).map(k => parseInt(k.split(':')[1]) * 4 + len));
-    while (totalBeats() < maxNeeded) {
+    // วางเป็นก้อนเดียว ต่อเนื่องยาวเท่ากับที่คัดลอกมาจริง โดยยึดห้องที่มีเลขบาร์น้อยที่สุด
+    // ในกลุ่มที่เลือกไว้เป็นจุดเริ่มวาง (เดิม: วนวางคลิปทั้งก้อนซ้ำที่ห้องทุกห้องที่เลือก
+    // ทำให้เนื้อหาห้องแรกถูกเขียนทับซ้ำ กลายเป็นห้องเกินมาไม่ตรงกับที่คัดลอก — แก้แล้ว)
+    const bars = Array.from(state.selectedRooms).map(k => parseInt(k.split(':')[1], 10));
+    const minBar = Math.min(...bars);
+    const startB = minBar * 4;
+
+    while (totalBeats() < startB + len) {
         state.numBars += BARS_PER_VAK;
         ensureCapacity();
         document.getElementById('numVak').value = state.numBars / BARS_PER_VAK;
     }
-    
-    state.selectedRooms.forEach(roomKey => {
-        const [, bStr] = roomKey.split(':');
-        const startB = parseInt(bStr) * 4;
-        
-        if (customClipboard.data.right) {
-            for (let i = 0; i < len; i++) {
-                state.notes.right[startB + i] = customClipboard.data.right[i];
-                if (state.recordMode !== 'one') state.notes.left[startB + i] = customClipboard.data.left[i];
-            }
+
+    // activeRight/activeLeft ไม่มีในคลิปบอร์ดรุ่นเก่า (จาก copyRoom เดี่ยว) — ถือว่าเป็นทั้ง 2 มือเสมอ ตามพฤติกรรมเดิม
+    const activeRight = customClipboard.activeRight;
+    const activeLeft  = customClipboard.activeLeft;
+
+    for (let i = 0; i < len; i++) {
+        const idx = startB + i;
+        if (customClipboard.data.right != null && (!activeRight || activeRight[i])) {
+            state.notes.right[idx] = customClipboard.data.right[i];
         }
-    });
-    
+        if (state.recordMode !== 'one' && customClipboard.data.left != null && (!activeLeft || activeLeft[i])) {
+            state.notes.left[idx] = customClipboard.data.left[i];
+        }
+    }
+
     state.isMultiSelectMode = false;
     state.selectedRooms.clear();
     document.getElementById('multiSelectActionMenu').classList.add('hidden');
-    renderNotation(); 
-    showToast('วางโน้ตเข้าห้องที่เลือกเรียบร้อย', 'success');
+    renderNotation();
+    showToast('วางโน้ตเรียบร้อย', 'success');
+}
+
+// ── (Desktop) ลบโน้ตของทุกห้องที่เลือกไว้ (state.selectedRooms) พร้อมกัน ──────────────
+// แยกจาก deleteAtCursor() เดิม (ลบทีละช่อง ตาม cursor เดี่ยว) โดยเจตนา
+// เพื่อไม่ให้ Delete/Backspace ตอนอยู่ในโหมดเลือกหลายห้องไปชนกับพฤติกรรมลบโน้ตปกติ
+// ลบเฉพาะแถวมือที่ถูกเลือกไว้จริงต่อห้องเท่านั้น (ไม่ไปแตะมืออีกข้างที่ไม่ได้เลือก)
+function deleteSelectedRooms() {
+    if (!state.selectedRooms || state.selectedRooms.size === 0) return;
+    pushUndo();
+    const roomMap = _groupSelectedRoomsByBar();
+    roomMap.forEach((hands, bar) => {
+        const startB = bar * 4;
+        for (let i = 0; i < 4; i++) {
+            if (hands.right) state.notes.right[startB + i] = null;
+            if (hands.left)  state.notes.left[startB + i]  = null;
+        }
+    });
+    state.isMultiSelectMode = false;
+    state.selectedRooms.clear();
+    document.getElementById('multiSelectActionMenu')?.classList.add('hidden');
+    renderNotation();
+    showToast(`ลบโน้ต ${roomMap.size} ห้องเรียบร้อย`, 'success');
 }
 
 function deleteLine(lineIndex) {
@@ -673,4 +718,3 @@ function updateSectionStats() {
       statsContainer.appendChild(statDiv);
   }
 }
-

@@ -79,6 +79,7 @@ function switchInstrument(instId) {
     renderNotation();
     renderImeInfographic();
     renderGongs(); // วาดลูกฆ้องใหม่เสมอ ไม่ว่าจะเลือกวงใด
+    scheduleAutosave();
 }
 
 let pendingInstrument = null;
@@ -151,7 +152,8 @@ function updatePageTitle() {
 
 const BEATS_PER_BAR = 4;
 const BARS_PER_VAK = 8;       
-const MAX_VAKS = 500;
+// ไม่มีเพดานจำนวนวรรคจากตัวแอปเอง; ขีดจำกัดจริงขึ้นกับหน่วยความจำของเบราว์เซอร์และเครื่องผู้ใช้
+const MAX_VAKS = Number.MAX_SAFE_INTEGER;
 
 const state = {
   songName: '', hand: 'right', bpm: 200, numBars: 8, cursorBeat: -1,
@@ -180,15 +182,17 @@ const MAX_UNDO = 40;
 //    เก็บแค่ {hand, idx, val เดิม} ของช่องที่กำลังจะเปลี่ยน แทนการ copy ทั้งอาเรย์
 //  - "full" snapshot: ใช้กับ action ที่กระทบหลายช่อง/โครงสร้าง (แทรก/ลบ/ย้ายบรรทัด, เปลี่ยนเครื่องดนตรี,
 //    นำเข้าไฟล์, วางหลายห้อง ฯลฯ) ซึ่งเกิดไม่บ่อยเท่า จึง copy ทั้งอาเรย์แบบเดิมไว้เพื่อความถูกต้อง/ปลอดภัยสูงสุด
-function _snapMeta() {
-  return {
+function _snapMeta(includeDocument = false) {
+  const meta = {
     instrument: currentInstrument, recordMode: state.recordMode,
     cursorBeat: state.cursorBeat, hand: state.hand, numBars: state.numBars,
     repeats: {...state.repeats}, sections: {...state.sections}, lineLengths: {...state.lineLengths}
   };
+  if (includeDocument) { meta.songName = state.songName; meta.bpm = state.bpm; }
+  return meta;
 }
 function _makeFullSnapshot() {
-  return { delta: false, right: [...state.notes.right], left: [...state.notes.left], ..._snapMeta() };
+  return { delta: false, right: [...state.notes.right], left: [...state.notes.left], ..._snapMeta(true) };
 }
 function _makeDeltaSnapshot(cellRefs) {
   // cellRefs: [{hand, idx}, ...] — จับค่า "ปัจจุบัน" ของช่องเหล่านี้ไว้ (ใช้ตอน apply กลับ)
@@ -254,6 +258,11 @@ function restoreSnapshot(snap) {
   }
   state.numBars = snap.numBars;
   document.getElementById('numVak').value = snap.numBars / BARS_PER_VAK;
+  state.songName = typeof snap.songName === 'string' ? snap.songName : state.songName;
+  state.bpm = Number.isFinite(snap.bpm) ? snap.bpm : state.bpm;
+  document.getElementById('songName').value = state.songName;
+  document.getElementById('bpm').value = state.bpm;
+  updatePageTitle();
   ensureCapacity(); // ต้องเรียกก่อน apply ค่าโน้ต กัน idx เกินขอบเขตกรณี numBars เปลี่ยน
 
   if (snap.delta) {
@@ -313,8 +322,11 @@ function appendNewVak() {
   });
 }
 
-const LS_KEY = 'kwyi_autosave';
-let currentFileHandle = null;
+let currentProjectHandle = null;
+let currentProjectName = '';
+let isDocumentDirty = false;
+let isDownloadConfirmationPending = false;
+const hasFileSystemAccess = 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
 
 function buildSaveData() {
   if (chordTimer) { clearTimeout(chordTimer); commitChord(); }
@@ -334,76 +346,181 @@ function buildSaveData() {
   };
 }
 
-function updateSaveTime(mode) {
+function updateSaveUI() {
+  const badge = document.getElementById('saveBadge');
+  const fname = document.getElementById('saveFileName');
+  const status = document.getElementById('autosaveStatus');
+  const confirmDownloadBtn = document.getElementById('confirmDownloadBtn');
+  const hasProjectFile = Boolean(currentProjectName);
+  if (confirmDownloadBtn) confirmDownloadBtn.hidden = !isDownloadConfirmationPending;
+  if (badge) {
+    badge.textContent = isDownloadConfirmationPending ? 'รอตรวจไฟล์' : (!hasProjectFile || isDocumentDirty ? 'ยังไม่ได้บันทึก' : 'บันทึกแล้ว');
+    badge.className = `save-badge ${isDownloadConfirmationPending || !hasProjectFile || isDocumentDirty ? 'ls' : 'fs'}`;
+  }
+  if (fname) fname.textContent = currentProjectName || 'ยังไม่ได้เลือกไฟล์งาน';
+  if (status) {
+    if (isDownloadConfirmationPending) {
+      status.textContent = '⚠ เบราว์เซอร์เริ่มดาวน์โหลดไฟล์แล้ว — ตรวจสอบว่าไฟล์อยู่ในโฟลเดอร์ดาวน์โหลดก่อนปิดหน้านี้';
+    } else if (!hasProjectFile) {
+      status.textContent = '⚠ งานนี้ยังอยู่ในหน้านี้ — กด “บันทึกลงเครื่อง” ก่อนปิดหรือรีเฟรช';
+    } else if (isDocumentDirty) {
+      status.textContent = '⚠ มีการแก้ไขที่ยังไม่ได้บันทึกลงเครื่อง';
+    } else {
+      status.textContent = '✓ งานถูกบันทึกลงเครื่องแล้ว';
+    }
+  }
+}
+
+function markDocumentDirty() {
+  isDocumentDirty = true;
+  isDownloadConfirmationPending = false;
+  updateSaveUI();
+}
+
+function markDocumentSaved(name = currentProjectName) {
+  currentProjectName = name || currentProjectName;
+  isDocumentDirty = false;
+  isDownloadConfirmationPending = false;
+  updateSaveUI();
+}
+
+function markDocumentDownloadCreated(name) {
+  currentProjectName = name || currentProjectName;
+  // เบราว์เซอร์ที่ใช้การดาวน์โหลดธรรมดาไม่แจ้งว่าผู้ใช้ยกเลิก/บล็อกไฟล์หรือไม่
+  // จึงคงคำเตือนก่อนปิดไว้จนกว่าผู้ใช้จะกดยืนยันหลังตรวจสอบไฟล์ด้วยตนเอง.
+  isDocumentDirty = true;
+  isDownloadConfirmationPending = true;
+  updateSaveUI();
+}
+
+function confirmDownloadedFile() {
+  if (!isDownloadConfirmationPending) return;
+  markDocumentSaved(currentProjectName);
+  showToast('ยืนยันการบันทึกไฟล์แล้ว', 'success');
+}
+
+function updateSaveTime() {
   const status = document.getElementById('autosaveStatus');
   const now = new Date(); const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const label = mode === 'file' ? '💾 บันทึกลงไฟล์เมื่อ' : '☁ บันทึกลงเบราว์เซอร์เมื่อ';
-  if (status) status.textContent = `${label} ${timeStr}`;
+  if (status) status.textContent = `✓ บันทึกลงเครื่องเมื่อ ${timeStr}`;
 }
 
-function saveToLocalStorage() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(buildSaveData())); updateSaveTime('localStorage'); } 
-  catch(e) { showToast('บันทึกล้มเหลว: ' + e.message, 'error'); }
+function reportSaveFailure(target, error) {
+  const name = error?.name || '';
+  const detail = String(error?.message || 'ไม่ทราบสาเหตุ').toLowerCase();
+  let cause = 'เบราว์เซอร์ไม่สามารถดำเนินการได้';
+  let action = 'ลองใหม่อีกครั้ง หรือปิดแท็บอื่นแล้วเปิดแอปใหม่';
+
+  if (name === 'QuotaExceededError' || /quota|storage.*full|exceeded/.test(detail)) {
+    cause = 'พื้นที่เก็บข้อมูลของเบราว์เซอร์เต็ม';
+    action = 'อย่าล้างข้อมูลของเว็บไซต์นี้ก่อน ให้ลบข้อมูลเว็บไซต์อื่นหรือเพิ่มพื้นที่ว่าง แล้วกดบันทึกอีกครั้ง';
+  } else if (name === 'SecurityError' || /security|not allowed|permission|blocked/.test(detail)) {
+    cause = 'เบราว์เซอร์บล็อกสิทธิ์การบันทึกหรือดาวน์โหลด';
+    action = 'อนุญาตการดาวน์โหลด/พื้นที่จัดเก็บสำหรับเว็บไซต์นี้ แล้วลองใหม่';
+  } else if (/memory|allocation|arraybuffer|out of memory|too large/.test(detail)) {
+    cause = 'หน่วยความจำเครื่องไม่พอสำหรับไฟล์ขนาดนี้';
+    action = 'ปิดแอปหรือแท็บอื่น แล้วส่งออกเป็นช่วงสั้นลง';
+  } else if (/offlineaudiocontext|not supported|unsupported/.test(detail)) {
+    cause = 'เบราว์เซอร์นี้ไม่รองรับการสร้างไฟล์เสียง';
+    action = 'ลองใช้ Chrome, Edge หรือ Safari เวอร์ชันล่าสุด';
+  } else if (/network|fetch|load.*script|cdn/.test(detail)) {
+    cause = 'โหลดส่วนประกอบที่จำเป็นจากอินเทอร์เน็ตไม่สำเร็จ';
+    action = 'ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+  }
+
+  console.error(`Save failed (${target}):`, error);
+  showToast(`ไม่สามารถ${target}: ${cause} วิธีแก้: ${action}`, 'error');
 }
 
-let autosaveTimer = null;
-function scheduleAutosave() {
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(saveToLocalStorage, 750);
-}
-
-function loadFromLocalStorage() {
+async function writeProjectFile(handle, name) {
   try {
-    const raw = localStorage.getItem(LS_KEY); if (!raw) return false;
-    const data = JSON.parse(raw); applyImport(data, true);
-    const timeStr = data.savedAt ? new Date(data.savedAt).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    showToast(`โหลดงานล่าสุด: ${data.songName || 'ไม่มีชื่อ'} (${timeStr})`, 'success');
-    updateSaveUI(); return true;
-  } catch(e) { return false; }
-}
-
-async function saveToFileHandle(handle) {
-  try {
-    const writable = await handle.createWritable(); await writable.write(JSON.stringify(buildSaveData(), null, 2)); await writable.close();
-    currentFileHandle = handle; updateSaveTime('file'); updateSaveUI(); return true;
+    const writable = await handle.createWritable();
+    await writable.write(JSON.stringify(buildSaveData(), null, 2));
+    await writable.close();
+    currentProjectHandle = handle;
+    markDocumentSaved(name || handle.name);
+    updateSaveTime();
+    return true;
   } catch(e) {
-    if (e.name !== 'AbortError') showToast('บันทึกไฟล์ไม่สำเร็จ: ' + e.message, 'error'); return false;
+    reportSaveFailure('บันทึกไฟล์งาน', e);
+    return false;
   }
 }
 
-async function saveFileAs() {
-  if (!hasFSAPI) { exportNotation(); return; }
+async function saveProjectAs() {
   try {
-    const safeName = getSafeFilename(state.songName);
-    const handle = await window.showSaveFilePicker({ suggestedName: safeName + '.json', types: [{ description: 'Notation JSON', accept: { 'application/json': ['.json'] } }] });
-    await saveToFileHandle(handle); showToast('บันทึกไฟล์สำเร็จ', 'success');
-  } catch(e) { if (e.name !== 'AbortError') showToast('ยกเลิกหรือเกิดข้อผิดพลาด: ' + e.message, 'error'); }
-}
-
-async function saveToCurrentFile() {
-  if (!currentFileHandle) { await saveFileAs(); return; }
-  const ok = await saveToFileHandle(currentFileHandle); if (ok) showToast('💾 Save ทับไฟล์สำเร็จ', 'success');
-}
-
-function updateSaveUI() {
-  const badge = document.getElementById('saveBadge'); const fname = document.getElementById('saveFileName'); const saveFileBtn = document.getElementById('saveFileBtn');
-  if (hasFSAPI) {
-    if (saveFileBtn) saveFileBtn.style.display = '';
-    if (badge) { badge.textContent = currentFileHandle ? 'File System API' : 'localStorage + File'; badge.className = 'save-badge fs'; }
-    if (fname) fname.textContent = currentFileHandle ? (currentFileHandle.name || '—') : 'ยังไม่ได้เลือกไฟล์ · กด ⬇ นำเข้า เพื่อเปิดไฟล์ที่มีอยู่';
-  } else {
-    if (saveFileBtn) saveFileBtn.style.display = 'none';
-    if (badge) { badge.textContent = 'localStorage'; badge.className = 'save-badge ls'; }
-    if (fname) fname.textContent = 'บันทึกด้วยตนเองใน browser · กดส่งออก JSON เพื่อดาวน์โหลด';
+    if (hasFileSystemAccess) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: `${getSafeFilename(state.songName)}.json`,
+        types: [{ description: 'ไฟล์งานโน้ต', accept: { 'application/json': ['.json'] } }]
+      });
+      return await writeProjectFile(handle, handle.name);
+    }
+    const blob = new Blob([JSON.stringify(buildSaveData(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${getSafeFilename(state.songName)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    markDocumentDownloadCreated(a.download);
+    return 'download-created';
+  } catch(e) {
+    if (e.name !== 'AbortError') reportSaveFailure('บันทึกไฟล์งาน', e);
+    return false;
   }
+}
+
+async function openProjectFile() {
+  if (isDocumentDirty && !window.confirm('มีการแก้ไขที่ยังไม่ได้บันทึกลงเครื่อง ต้องการเปิดไฟล์อื่นและทิ้งการแก้ไขนี้หรือไม่?')) return;
+  try {
+    let file, handle = null;
+    if (hasFileSystemAccess) {
+      [handle] = await window.showOpenFilePicker({ types: [{ description: 'ไฟล์งานโน้ต', accept: { 'application/json': ['.json'] } }], multiple: false });
+      file = await handle.getFile();
+    } else {
+      file = await new Promise((resolve) => {
+        const picker = document.createElement('input');
+        picker.type = 'file'; picker.accept = '.json,application/json';
+        picker.addEventListener('change', () => resolve(picker.files[0] || null), { once: true });
+        picker.click();
+      });
+      if (!file) return;
+    }
+    const data = JSON.parse(await file.text());
+    restoreProjectData(data);
+    currentProjectHandle = handle;
+    markDocumentSaved(file.name);
+    showToast(`เปิดงานแล้ว: ${file.name}`, 'success');
+  } catch(e) {
+    if (e.name !== 'AbortError') reportSaveFailure('เปิดไฟล์งาน', e);
+  }
+}
+
+function scheduleAutosave() { markDocumentDirty(); }
+
+async function saveCurrentProject() {
+  const ok = currentProjectHandle
+    ? await writeProjectFile(currentProjectHandle, currentProjectName)
+    : await saveProjectAs();
+  if (ok === true) showToast('บันทึกไฟล์งานลงเครื่องแล้ว', 'success');
+  if (ok === 'download-created') showToast('เบราว์เซอร์เริ่มดาวน์โหลดไฟล์แล้ว — ตรวจสอบโฟลเดอร์ดาวน์โหลดก่อนปิดหน้า', 'info');
+  return ok;
 }
 
 function initSaveSystem() {
-  updateSaveUI(); loadFromLocalStorage();
-  document.getElementById('saveNowBtn').addEventListener('click', () => { saveToLocalStorage(); showToast('บันทึกใน browser แล้ว', 'success'); });
-  const saveFileBtn = document.getElementById('saveFileBtn'); if (saveFileBtn) saveFileBtn.addEventListener('click', saveToCurrentFile);
-  window.addEventListener('pagehide', () => {
-    clearTimeout(autosaveTimer);
-    saveToLocalStorage();
+  updateSaveUI();
+  document.getElementById('saveNowBtn').addEventListener('click', saveCurrentProject);
+  document.getElementById('openProjectBtn').addEventListener('click', openProjectFile);
+  document.getElementById('confirmDownloadBtn').addEventListener('click', confirmDownloadedFile);
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveCurrentProject();
+    }
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (!isDocumentDirty) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
 }

@@ -959,6 +959,7 @@ footer { padding: 20px; border-top: 1px solid var(--border); text-align: center;
 
 .save-panel { padding: 8px 20px; background: rgba(92,138,74,0.05); border-bottom: 1px solid rgba(92,138,74,0.2); }
 @media (max-width: 600px) { .save-panel { padding: 14px 16px; } }
+.save-panel-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .save-panel-title { font-size: 11px; font-weight: 700; color: var(--green); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .btn.save-now { background: var(--green); border-color: var(--green); color: var(--bg); font-weight: 700; }
 .btn.save-now:hover:not(:disabled) { background: #5af0a8; border-color: #5af0a8; }
@@ -971,6 +972,11 @@ footer { padding: 20px; border-top: 1px solid var(--border); text-align: center;
 .save-badge.fs { background: rgba(181,101,47,0.15); color: var(--accent); border: 1px solid rgba(181,101,47,0.3); }
 .save-badge.ls { background: rgba(92,138,74,0.12); color: var(--green); border: 1px solid rgba(92,138,74,0.25); }
 .save-file-name { font-size: 12px; color: var(--muted); font-family: 'SF Mono', Menlo, monospace; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) {
+  .save-file-name { flex-basis: 100%; order: 3; }
+  .autosave-status { flex-basis: 100%; order: 4; line-height: 1.35; }
+  .save-actions { margin-left: 0; }
+}
 
 /* MP3 Export Modal Selects */
 .mp3-select {

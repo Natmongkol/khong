@@ -30,12 +30,13 @@
 
   <div class="save-panel" style="margin-bottom: 20px; border-radius: 12px;">
     <div class="save-panel-row">
-      <span class="save-badge ls" id="saveBadge">localStorage</span>
+      <span class="save-badge ls" id="saveBadge">ยังไม่ได้บันทึก</span>
       <span class="save-file-name" id="saveFileName">—</span>
       <span class="autosave-status" id="autosaveStatus">—</span>
       <div class="save-actions">
-        <button class="btn save-now" id="saveNowBtn">💾 Save</button>
-        <button class="btn save-file" id="saveFileBtn" style="display:none">📂 Save ทับไฟล์</button>
+        <button class="btn" id="openProjectBtn">📂 เปิดงาน</button>
+        <button class="btn save-now" id="saveNowBtn">💾 บันทึกลงเครื่อง</button>
+        <button class="btn" id="confirmDownloadBtn" hidden>✓ ฉันตรวจไฟล์แล้ว</button>
       </div>
     </div>
   </div>
@@ -68,7 +69,7 @@
       <div class="ctrl-block">
         <span class="ctrl-block-label">โครงสร้าง</span>
         <div class="ctrl-block-body">
-          <input type="number" id="numVak" class="tempo-input" min="1" max="500" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
+          <input type="number" id="numVak" class="tempo-input" min="1" value="1" inputmode="numeric" title="บรรทัดทั้งหมด">
           <span class="control-label">บรรทัด</span>
         </div>
       </div>
@@ -111,8 +112,6 @@
           <div class="dropdown">
             <button class="btn btn-icon" id="importMainBtn" title="นำเข้า">⬇ นำเข้า ▾</button>
             <div class="dropdown-menu" id="importMenu">
-              <button class="dropdown-item" id="importJsonBtn">📄 ไฟล์โปรเจกต์ (.JSON)</button>
-              <button class="dropdown-item" id="importTxtBtn">📝 ไฟล์ข้อความ (.TXT)</button>
               <button class="dropdown-item" id="importPdfBtn">📥 ตารางโน้ตจาก .PDF</button>
             </div>
           </div>
@@ -120,8 +119,6 @@
             <button class="btn btn-icon export-btn" id="exportMainBtn" title="ส่งออก">⬆ ส่งออก ▾</button>
             <div class="dropdown-menu" id="exportMenu">
               <button class="dropdown-item" id="exportMenuMp3">🎵 ไฟล์เสียง (.MP3)</button>
-              <button class="dropdown-item" id="exportMenuJson">📄 ไฟล์โปรเจกต์ (.JSON)</button>
-              <button class="dropdown-item" id="exportMenuTxt">📝 ไฟล์ข้อความ (.TXT)</button>
               <button class="dropdown-item" id="exportMenuPdf">🖨️ ตารางโน้ต (.PDF)</button>
             </div>
           </div>
@@ -146,9 +143,12 @@
         <h2>Instrument</h2>
         <h3 id="instPanelTitle" style="margin:0;">ฆ้องวงใหญ่ · 16 ลูก</h3>
       </div>
-      <button class="btn" id="focusModeBtn" style="background: rgba(181,101,47,0.1); border-color: var(--accent); color: var(--accent); font-weight: bold; border-radius: 20px; padding: 6px 16px;">
-        <span style="font-size: 16px; vertical-align: middle;">👁️</span> โหมดรับชม
-      </button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="toggleInstrumentBtn" aria-controls="gongStageContainer" aria-expanded="true" title="ซ่อนหรือแสดงรูปเครื่องดนตรี">🙈 ซ่อนเครื่องดนตรี</button>
+        <button class="btn" id="focusModeBtn" style="background: rgba(181,101,47,0.1); border-color: var(--accent); color: var(--accent); font-weight: bold; border-radius: 20px; padding: 6px 16px;">
+          <span style="font-size: 16px; vertical-align: middle;">👁️</span> โหมดรับชม
+        </button>
+      </div>
     </div>
     
     <!-- Stage Container: เพื่อให้ดึง stage กลับมาไว้ที่เดิมได้ -->
@@ -218,6 +218,33 @@
               <td><kbd>Space</kbd></td>
               <td><strong>โหมดปกติ:</strong> เล่น / หยุดเพลง <br><strong>โหมดแก้ไขโน้ต:</strong> ใส่เครื่องหมาย <strong>(หยุด)</strong> และเลื่อนเคอร์เซอร์</td>
             </tr>
+            <tr>
+              <td><kbd>←</kbd> / <kbd>→</kbd></td>
+              <td><strong>เลื่อนเคอร์เซอร์</strong> ไปช่องโน้ตก่อนหน้า / ถัดไป</td>
+            </tr>
+            <tr>
+              <td><kbd>Enter</kbd></td>
+              <td><strong>ขึ้นห้อง/วรรคใหม่</strong> — เลื่อนเคอร์เซอร์ไปยังห้องถัดไป</td>
+            </tr>
+            <tr>
+              <td><kbd>Backspace</kbd> / <kbd>Delete</kbd></td>
+              <td><strong>ลบโน้ต</strong> ที่ตำแหน่งเคอร์เซอร์ (หรือลบโน้ตทุกห้องที่เลือกไว้พร้อมกัน ถ้าอยู่ในโหมดเลือกหลายห้อง)</td>
+            </tr>
+            <tr>
+              <td><kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
+              <td><strong>เลิกทำ / ทำซ้ำ</strong> (Undo / Redo)</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding-top:14px; font-weight:600;">เฉพาะคอมพิวเตอร์ (Desktop)</td>
+            </tr>
+            <tr>
+              <td>ลากเมาส์คลุมช่องโน้ต</td>
+              <td><strong>เลือกหลายห้องพร้อมกัน</strong> — กดเมาส์ค้างแล้วลากผ่านหลายห้อง (ลากได้ทั้งแนวนอนและข้ามบรรทัด) ถ้าเป็นโหมดสองมือ จะเลือกทั้งแถวมือขวา-มือซ้ายของห้องนั้นให้อัตโนมัติ โดยนับจำนวนห้องตามเลขห้องจริง (ไม่นับซ้ำเพราะมี 2 แถวมือ) ช่องที่เลือกจะไฮไลต์สีม่วง แล้วจะมีเมนูลอยขึ้นมาให้เลือกทำต่อ</td>
+            </tr>
+            <tr>
+              <td><kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>Ctrl</kbd> + <kbd>V</kbd></td>
+              <td><strong>คัดลอก / วาง</strong> ห้องที่เลือกไว้ (ใช้ได้เมื่ออยู่ในโหมดเลือกหลายห้อง) — วางจะเรียงต่อเนื่องให้ตรงกับที่คัดลอกมาเป๊ะๆ โดยเริ่มจากห้องแรกที่เลือกไว้เป็นจุดวาง</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -254,6 +281,7 @@
   <button class="tsm-btn" id="msmCopy"><span class="tsm-icon">⎘</span>คัดลอก</button>
   <button class="tsm-btn" id="msmPaste" disabled><span class="tsm-icon">📋</span>วาง</button>
   <button class="tsm-btn tsm-play" id="msmPlay"><span class="tsm-icon">▶</span>เล่นซ้ำ</button>
+  <button class="tsm-btn tsm-del" id="msmDel"><span class="tsm-icon">⌫</span>ลบ</button>
   <button class="tsm-btn" id="msmCancel"><span class="tsm-icon">✕</span>ยกเลิก</button>
 </div>
 
@@ -514,6 +542,9 @@
       <div style="text-align:center; font-size:26px; font-weight:700; color:var(--accent); font-family:'SF Mono',monospace;" id="exMp3PercentText">0%</div>
 
       <div style="text-align:center; font-size:11px; color:var(--dim);">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้</div>
+      <div class="modal-actions" style="justify-content:center; padding:0;">
+        <button class="btn" id="cancelExportProgressBtn">ยกเลิกการสร้าง MP3</button>
+      </div>
     </div>
 
   </div>

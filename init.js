@@ -16,11 +16,32 @@ function init() {
   const qnavTipInit = document.getElementById('qnavTooltip');
   if (qnavTipInit) qnavTipInit.textContent = `ไปดู${getActiveInst().name}`;
   initTopControls();
+  initInstrumentVisibility();
   initExportImportMenus();
   initFocusMode();
   initCellAndLineMenus();
   initNotationDelegation();
   initGlobalPointerAndKeyboard();
+  initDesktopDragSelect();
+}
+
+// ── ซ่อน/แสดงรูปเครื่องดนตรี เพื่อเพิ่มพื้นที่สำหรับพิมพ์โน้ต ──
+function initInstrumentVisibility() {
+  const button = document.getElementById('toggleInstrumentBtn');
+  const container = document.getElementById('gongStageContainer');
+  if (!button || !container) return;
+
+  const setVisible = (visible) => {
+    container.hidden = !visible;
+    button.setAttribute('aria-expanded', String(visible));
+    button.textContent = visible ? '🙈 ซ่อนเครื่องดนตรี' : '👁️ แสดงเครื่องดนตรี';
+
+    if (visible) requestAnimationFrame(() => { layoutGongs(); _rebuildGongCache(); });
+  };
+
+  setVisible(true);
+
+  button.addEventListener('click', () => setVisible(container.hidden));
 }
 
 // ── ชื่อเพลง, bpm, จำนวนวรรค, record toggle, play/stop/undo/redo, modal สลับเครื่อง/ล้าง/เล่นช่วง ──
@@ -141,7 +162,7 @@ function initTopControls() {
   });
 }
 
-// ── เมนู Export/Import (JSON/TXT/PDF/MP3) และปุ่มคู่มือ ──
+// ── เมนู Export/Import (PDF/MP3) และปุ่มคู่มือ ──
 function initExportImportMenus() {
   const exportMainBtn = document.getElementById('exportMainBtn');
   const exportMenu = document.getElementById('exportMenu');
@@ -233,22 +254,13 @@ function initExportImportMenus() {
       if (!isExporting) document.getElementById('exportMp3Modal').classList.remove('show');
   });
 
+  document.getElementById('cancelExportProgressBtn').addEventListener('click', requestMp3ExportCancel);
+
   document.getElementById('exportMp3FullBtn').addEventListener('click', () => {
       exportMP3();
   });
 
-  document.getElementById('exportMenuJson').addEventListener('click', () => { exportMenu.classList.remove('show'); exportNotation(); });
-  document.getElementById('exportMenuTxt').addEventListener('click', () => { exportMenu.classList.remove('show'); exportText(); });
   document.getElementById('exportMenuPdf').addEventListener('click', () => { exportMenu.classList.remove('show'); exportPDF(); });
-
-  document.getElementById('importJsonBtn').addEventListener('click', () => {
-     if(importMenu) importMenu.classList.remove('show');
-     executeImport('json');
-  });
-  document.getElementById('importTxtBtn').addEventListener('click', () => {
-     if(importMenu) importMenu.classList.remove('show');
-     executeImport('txt');
-  });
   
   const toggleWrap = document.getElementById('toggleManualWrap');
   if(toggleWrap) {
@@ -837,6 +849,7 @@ function initCellAndLineMenus() {
       e.preventDefault();
       playSelectedRooms();
   });
+  document.getElementById('msmDel')?.addEventListener('click', (e) => { e.preventDefault(); deleteSelectedRooms(); });
   
   document.getElementById('camDel')?.addEventListener('click', (e) => { 
       e.preventDefault(); 
@@ -967,7 +980,7 @@ function initNotationDelegation() {
         state.cursorBeat = beat; 
         state.hand = hand;
         state.isEditMode = true;
-        patchNotation(); // เปลี่ยนแค่ cursor/editMode — โครงสร้าง DOM ไม่เปลี่ยน
+        patchNotation([]); // เปลี่ยนแค่ cursor/editMode — โครงสร้าง DOM ไม่เปลี่ยน
         hideCellMenus();
         positionMenuForCell(document.getElementById('cellEditMenu'));
         lastTap.time = 0; 
@@ -975,7 +988,7 @@ function initNotationDelegation() {
         state.cursorBeat = beat; 
         state.hand = hand;
         state.isEditMode = false;
-        patchNotation(); // เปลี่ยนแค่ cursor — โครงสร้าง DOM ไม่เปลี่ยน
+        patchNotation([]); // เปลี่ยนแค่ cursor — โครงสร้าง DOM ไม่เปลี่ยน
         hideCellMenus();
         positionMenuForCell(document.getElementById('cellActionMenu'));
         lastTap = { time: now, beat, hand };
@@ -1021,6 +1034,66 @@ function initNotationDelegation() {
         state.repeats[lineNum] = thisSecStart + val - 1;
       }
     }
+  });
+}
+
+// ── (Desktop เท่านั้น) ลากเมาส์ค้างคลุมหลายช่องโน้ตเพื่อเลือกพร้อมกัน ─────────────────
+// ใช้ mousedown/mousemove/mouseup ธรรมดา (ไม่ใช้ pointerdown) + เช็ค `pointer: fine`
+// เพื่อให้แน่ใจว่าทำงานเฉพาะเมาส์จริงบนคอมพิวเตอร์ ไม่กระทบการแตะ (touch) บนมือถือ/แท็บเล็ต
+// ที่ยังใช้ปุ่ม "เลือก" ในเมนู cellActionMenu (camMulti) + แตะทีละช่องแบบเดิมได้ตามปกติ
+// นำ state.isMultiSelectMode / state.selectedRooms ชุดเดียวกับของเดิมมาใช้ต่อ
+// เพื่อให้ไฮไลต์ (.multi-selected-room-box) และเมนู multiSelectActionMenu ทำงานร่วมกันได้ทันที
+function initDesktopDragSelect() {
+  const notationDiv = document.getElementById('notation');
+  if (!notationDiv) return;
+  const isFinePointer = () => !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+
+  let drag = null; // { anchorBar, moved, startX, startY, lastBar }
+
+  document.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !isFinePointer()) return;
+    const cell = e.target.closest('.beat-cell');
+    if (!cell || !notationDiv.contains(cell)) return;
+    const beat = parseInt(cell.dataset.beat, 10);
+    const bar = Math.floor(beat / 4);
+    drag = { anchorBar: bar, moved: false, startX: e.clientX, startY: e.clientY, lastBar: null };
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    if (!drag.moved) {
+      const dx = Math.abs(e.clientX - drag.startX), dy = Math.abs(e.clientY - drag.startY);
+      if (dx < 4 && dy < 4) return; // ยังไม่ถือว่าเป็นการ "ลาก" — ปล่อยให้ click ปกติ (เลือกช่อง/double-click) ทำงานต่อ
+      drag.moved = true;
+      hideCellMenus();
+      state.isMultiSelectMode = true;
+      if (!state.selectedRooms) state.selectedRooms = new Set();
+    }
+    const cell = e.target.closest('.beat-cell');
+    if (!cell || !notationDiv.contains(cell)) return;
+    const beat = parseInt(cell.dataset.beat, 10);
+    const bar = Math.floor(beat / 4);
+    if (bar === drag.lastBar) return;
+    drag.lastBar = bar;
+    const lo = Math.min(drag.anchorBar, bar), hi = Math.max(drag.anchorBar, bar);
+    state.selectedRooms.clear();
+    // โหมดสองมือ: ลากคลุมกี่ห้องก็ตาม ให้คลุมทั้งมือขวา-มือซ้ายของห้องนั้นไปด้วยเสมอ
+    // (การ "นับจำนวนห้อง" ที่แสดงในข้อความแจ้งเตือน ยึดตามเลขห้อง/ตัวอักษรกำกับห้อง ไม่ได้นับซ้ำตามจำนวนแถวมือ)
+    for (let b = lo; b <= hi; b++) {
+      state.selectedRooms.add(`right:${b}`);
+      if (state.recordMode !== 'one') state.selectedRooms.add(`left:${b}`);
+    }
+    renderNotation();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!drag) return;
+    if (drag.moved && state.selectedRooms && state.selectedRooms.size > 0) {
+      document.getElementById('multiSelectActionMenu')?.classList.remove('hidden');
+      const pasteBtn = document.getElementById('msmPaste');
+      if (pasteBtn) pasteBtn.disabled = !customClipboard || customClipboard.type === 'line';
+    }
+    drag = null;
   });
 }
 
@@ -1129,6 +1202,13 @@ function initGlobalPointerAndKeyboard() {
     if (e.ctrlKey || e.metaKey) {
       if (code === 'KeyY' || (code === 'KeyZ' && e.shiftKey)) { e.preventDefault(); performRedo(); return; }
       if (code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
+
+      // (Desktop) Ctrl+C / Ctrl+V — คัดลอก/วางห้องที่เลือกไว้ (ต้องอยู่ในโหมดเลือกหลายห้องแล้วเท่านั้น
+      // ใช้ Ctrl ประกบเสมอ เพื่อไม่ให้ชนกับปุ่มตัวอักษร C/V ที่ใช้พิมพ์โน้ตของฆ้อง)
+      if (state.isMultiSelectMode && state.selectedRooms && state.selectedRooms.size > 0) {
+        if (code === 'KeyC') { e.preventDefault(); copyMultiRooms(); return; }
+        if (code === 'KeyV') { e.preventDefault(); pasteMultiRooms(); return; }
+      }
     }
 
     if (state.recordMode !== 'one') {
@@ -1172,7 +1252,12 @@ function initGlobalPointerAndKeyboard() {
         }
         return; 
     }
-    if (code === 'Delete' || code === 'Backspace') { e.preventDefault(); pressedCodes.add(code); deleteAtCursor(); return; }
+    if (code === 'Delete' || code === 'Backspace') {
+        e.preventDefault(); pressedCodes.add(code);
+        if (state.isMultiSelectMode && state.selectedRooms && state.selectedRooms.size > 0) { deleteSelectedRooms(); }
+        else { deleteAtCursor(); }
+        return;
+    }
     if (code === 'ArrowLeft') { e.preventDefault(); pressedCodes.add(code); moveCursorBy(-1); return; }
     if (code === 'ArrowRight') { e.preventDefault(); pressedCodes.add(code); moveCursorBy(+1); return; }
     if (code === 'Enter' || code === 'NumpadEnter') { e.preventDefault(); pressedCodes.add(code); appendNewVak(); return; }

@@ -634,6 +634,22 @@ function stopPlayback(cutAudio = false) {
 }
 
 let isExporting = false;
+let isMp3ExportCancelRequested = false;
+
+function requestMp3ExportCancel() {
+  if (!isExporting || isMp3ExportCancelRequested) return;
+  isMp3ExportCancelRequested = true;
+  const btn = document.getElementById('cancelExportProgressBtn');
+  if (btn) btn.disabled = true;
+  setExportProgress(0, 'กำลังยกเลิก… จะหยุดหลังประมวลผลช่วงปัจจุบัน');
+}
+
+function throwIfMp3ExportCancelled() {
+  if (!isMp3ExportCancelRequested) return;
+  const error = new Error('ผู้ใช้ยกเลิกการสร้าง MP3');
+  error.name = 'ExportCancelledError';
+  throw error;
+}
 
 
 
@@ -695,6 +711,8 @@ function showExportProgress() {
   const durEl = document.getElementById('exMp3SongDuration');
   if (elEl)  elEl.textContent  = '0:00';
   if (durEl) durEl.textContent = '—';
+  const cancelBtn = document.getElementById('cancelExportProgressBtn');
+  if (cancelBtn) cancelBtn.disabled = false;
 }
 
 function hideExportProgress() {
@@ -703,6 +721,8 @@ function hideExportProgress() {
   if (selArea)  selArea.style.display  = '';
   if (progArea) progArea.style.display = 'none';
   document.getElementById('exportMp3Modal').classList.remove('show');
+  const cancelBtn = document.getElementById('cancelExportProgressBtn');
+  if (cancelBtn) cancelBtn.disabled = false;
 }
 
 async function exportMP3(customSeq = null, suffix = '') {
@@ -712,23 +732,24 @@ async function exportMP3(customSeq = null, suffix = '') {
     return showToast('ไม่มีโน้ตที่จะส่งออก', 'error');
   }
 
+  const beatDur = 60 / state.bpm;
+  const seq = customSeq || getPlaybackSequence();
+  if (seq.length === 0) return showToast('ไม่พบช่วงโน้ตที่จะเล่น', 'error');
+  const songDurationSec = seq.length * beatDur;
   isExporting = true;
+  isMp3ExportCancelRequested = false;
   showExportProgress();
-
   try {
     setExportProgress(2, 'โหลดไลบรารีเสียง...');
     await ensureLamejs();
-
-    const beatDur = 60 / state.bpm;
-    const seq = customSeq || getPlaybackSequence();
-    if (seq.length === 0) throw new Error('ไม่พบช่วงโน้ตที่จะเล่น');
+    throwIfMp3ExportCancelled();
 
     const tailSec = Math.max(3.5, beatDur * 4);
-    const songDurationSec = seq.length * beatDur;
     startExportTimer(songDurationSec);
 
     setExportProgress(8, 'เตรียมเสียงลูกฆ้อง...');
     await new Promise(r => setTimeout(r, 10));
+    throwIfMp3ExportCancelled();
 
     const sampleRate = 44100;
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -758,107 +779,95 @@ async function exportMP3(customSeq = null, suffix = '') {
     const oneShotLen = Math.ceil(sampleRate * oneShotDur);
 
     for (let gi = 0; gi < gongList.length; gi++) {
+      throwIfMp3ExportCancelled();
       const gongIdx = gongList[gi];
       const freq = inst.freqs[gongIdx];
       const miniCtx = new OfflineCtx(2, oneShotLen, sampleRate);
       playGongFreq(freq, 0, 1, miniCtx);
       gongBuffers[gongIdx] = await miniCtx.startRendering();
+      throwIfMp3ExportCancelled();
       const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); 
       setExportProgress(pct, `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
     }
 
-    setExportProgress(32, 'ประกอบเพลง...');
+    // Render/encode ทีละช่วง เพื่อไม่สร้าง PCM ของทั้งเพลงพร้อมกันในหน่วยความจำ.
+    // ช่วงที่เริ่มกลางเสียงจะใส่โน้ตก่อนหน้ากลับเข้ามาพร้อม offset เพื่อให้เสียงกังวานต่อเนื่อง.
+    setExportProgress(32, 'ประกอบเพลงเป็นช่วง ๆ...');
     await new Promise(r => setTimeout(r, 10));
+    throwIfMp3ExportCancelled();
 
-    const duration = seq.length * beatDur + tailSec;
-    const renderLength = Math.ceil(sampleRate * duration);
-    const offlineCtx = new OfflineCtx(2, renderLength, sampleRate);
-    const exportBus = getMasterBus(offlineCtx); // limiter กันเสียงแตก/นอยส์ตอนหลายลูกซ้อนกันในไฟล์ที่ export ออกมา
     const metronomeOn = document.getElementById('metronomeToggle')?.checked;
+    const mp3encoder = new window.lamejs.Mp3Encoder(2, sampleRate, 128);
+    const mp3Data = [];
+    const sampleBlockSize = 1152;
+    const stepsPerChunk = Math.max(1, Math.floor(20 / beatDur));
 
-    for (let step = 0; step < seq.length; step++) {
-      const beat = seq[step]; const t = step * beatDur;
+    for (let chunkStart = 0; chunkStart < seq.length; chunkStart += stepsPerChunk) {
+      throwIfMp3ExportCancelled();
+      const chunkEnd = Math.min(seq.length, chunkStart + stepsPerChunk);
+      const chunkStartSec = chunkStart * beatDur;
+      const isFinalChunk = chunkEnd === seq.length;
+      const chunkDuration = (chunkEnd - chunkStart) * beatDur + (isFinalChunk ? tailSec : 0);
+      const offlineCtx = new OfflineCtx(2, Math.ceil(sampleRate * chunkDuration), sampleRate);
+      const exportBus = getMasterBus(offlineCtx);
+      const firstAudibleStep = Math.max(0, Math.ceil((chunkStartSec - oneShotDur) / beatDur));
 
-      if (metronomeOn && beat % 4 === 3) playMetronomeClick(t, offlineCtx);
+      for (let step = firstAudibleStep; step < chunkEnd; step++) {
+        const beat = seq[step];
+        const relativeTime = step * beatDur - chunkStartSec;
+        if (metronomeOn && relativeTime >= 0 && beat % 4 === 3) playMetronomeClick(relativeTime, offlineCtx);
 
-      for (const hand of ['right', 'left']) {
-        const baseGong = state.notes[hand][beat]; 
-        if (baseGong == null) continue;
-
-        let gongsToRender = [baseGong];
-        
-        // [เพิ่มใหม่] นำโน้ตคู่แปดมาผสมลงใน Timeline ของไฟล์ MP3
-        if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
+        for (const hand of ['right', 'left']) {
+          const baseGong = state.notes[hand][beat];
+          if (baseGong == null) continue;
+          const gongsToRender = [baseGong];
+          if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
             const lowerGong = baseGong - 7;
             if (lowerGong >= 0) gongsToRender.push(lowerGong);
-        }
-
-        for (const gong of gongsToRender) {
+          }
+          for (const gong of gongsToRender) {
             const src = offlineCtx.createBufferSource();
             src.buffer = gongBuffers[gong];
             src.connect(exportBus);
-            src.start(t);
+            if (relativeTime < 0) src.start(0, -relativeTime);
+            else src.start(relativeTime);
+          }
         }
       }
-    }
 
-    setExportProgress(38, 'render เสียงรวม...');
-    let renderedBuffer;
-    {
-      let lastPct = 38;
-      const estMs = Math.max(300, duration * 60); 
-      const startedAt = performance.now();
-      const progressTimer = setInterval(() => {
-        const frac = Math.min(0.97, (performance.now() - startedAt) / estMs);
-        const pct = 38 + Math.round(frac * 12); 
-        if (pct > lastPct) { lastPct = pct; setExportProgress(pct, 'render เสียงรวม...'); }
-      }, 150);
-
-      try {
-        renderedBuffer = await offlineCtx.startRendering();
-      } finally {
-        clearInterval(progressTimer);
-      }
-      setExportProgress(50, 'render เสียงรวมเสร็จสิ้น');
-    }
-
-    setExportProgress(50, 'แปลงเป็น MP3...');
-    await new Promise(r => setTimeout(r, 10));
-
-    const mp3encoder = new window.lamejs.Mp3Encoder(2, renderedBuffer.sampleRate, 128);
-    const mp3Data = [];
-    const left   = renderedBuffer.getChannelData(0);
-    const right   = renderedBuffer.getChannelData(1);
-    const sampleBlockSize = 1152;
-    const leftInt16  = new Int16Array(left.length);
-    const rightInt16 = new Int16Array(right.length);
-
-    for (let i = 0; i < left.length; i++) {
-      leftInt16[i]  = left[i]  < 0 ? left[i]  * 32768 : left[i]  * 32767;
-      rightInt16[i] = right[i] < 0 ? right[i] * 32768 : right[i] * 32767;
-    }
-
-    const CHUNK_SIZE = sampleBlockSize * 100;
-    for (let i = 0; i < left.length; i += CHUNK_SIZE) {
-      const end = Math.min(i + CHUNK_SIZE, left.length);
-      for (let j = i; j < end; j += sampleBlockSize) {
-        const mp3buf = mp3encoder.encodeBuffer(
-          leftInt16.subarray(j, j + sampleBlockSize),
-          rightInt16.subarray(j, j + sampleBlockSize)
-        );
+      const renderedBuffer = await offlineCtx.startRendering();
+      throwIfMp3ExportCancelled();
+      const left = renderedBuffer.getChannelData(0);
+      const right = renderedBuffer.getChannelData(1);
+      for (let i = 0; i < left.length; i += sampleBlockSize) {
+        if (i % (sampleBlockSize * 64) === 0) {
+          throwIfMp3ExportCancelled();
+          await new Promise(r => setTimeout(r, 0));
+        }
+        const end = Math.min(i + sampleBlockSize, left.length);
+        const leftInt16 = new Int16Array(end - i);
+        const rightInt16 = new Int16Array(end - i);
+        for (let j = 0; j < leftInt16.length; j++) {
+          leftInt16[j] = left[i + j] < 0 ? left[i + j] * 32768 : left[i + j] * 32767;
+          rightInt16[j] = right[i + j] < 0 ? right[i + j] * 32768 : right[i + j] * 32767;
+        }
+        const mp3buf = mp3encoder.encodeBuffer(leftInt16, rightInt16);
         if (mp3buf.length > 0) mp3Data.push(mp3buf);
       }
-      const progress = 50 + Math.round((end / left.length) * 45);
-      setExportProgress(progress, `แปลงเป็น MP3... ${Math.round((end / left.length) * 100)}%`);
+      const completed = chunkEnd / seq.length;
+      const progress = 32 + Math.round(completed * 63);
+      setExportProgress(progress, `สร้าง MP3 เป็นช่วง ๆ... ${Math.round(completed * 100)}%`);
       await new Promise(r => setTimeout(r, 0));
     }
 
+    throwIfMp3ExportCancelled();
     const finalBuf = mp3encoder.flush();
     if (finalBuf.length > 0) mp3Data.push(finalBuf);
     if (mp3Data.length === 0) throw new Error('ไม่มีข้อมูลเสียงที่จะบันทึก');
 
     setExportProgress(97, 'กำลังดาวน์โหลด...');
     await new Promise(r => setTimeout(r, 50));
+    throwIfMp3ExportCancelled();
 
     const safeName = getSafeFilename(state.songName);
     const fileName = `${safeName}${suffix}_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.mp3`;
@@ -884,29 +893,14 @@ async function exportMP3(customSeq = null, suffix = '') {
     showToast('ดาวน์โหลด MP3 สำเร็จ!', 'success');
 
   } catch (err) {
-    showToast('Export MP3 ล้มเหลว: ' + err.message, 'error');
+    if (err?.name === 'ExportCancelledError') {
+      showToast('ยกเลิกการสร้าง MP3 แล้ว', 'success');
+    } else {
+      reportSaveFailure('สร้างไฟล์ MP3', err);
+    }
   } finally {
     stopExportTimer();
     isExporting = false;
     hideExportProgress();
   }
-}
-
-function exportNotation() {
-  if (chordTimer) { clearTimeout(chordTimer); commitChord(); }
-  const data = { 
-    type: 'khong-wong-yai-notation', 
-    version: 5, 
-    instrument: currentInstrument,
-    recordMode: state.recordMode,
-    songName: state.songName, tempo: state.bpm, 
-    vak: state.numBars / BARS_PER_VAK, repeats: state.repeats || {}, sections: state.sections || {}, lineLengths: state.lineLengths || {},
-    notes: state.recordMode === 'one'
-      ? { right: [...state.notes.right] }
-      : { right: [...state.notes.right], left: [...state.notes.left] }
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const safeName = getSafeFilename(state.songName); const a = document.createElement('a'); 
-  a.href = URL.createObjectURL(blob); a.download = `${safeName}_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.json`;
-  a.click();
 }

@@ -365,8 +365,28 @@ let _patchPrevNotes = null; // snapshot ก่อนหน้า { right: [...],
 let _patchPrevCursor = -2;  // cursorBeat ก่อนหน้า
 let _patchPrevHand = null;  // hand ก่อนหน้า
 let _patchPrevEditMode = null;
+let _cursorScrollFrame = null;
+let _pendingCursorElement = null;
 
-function patchNotation() {
+function requestCursorScroll(element) {
+  _pendingCursorElement = element;
+  if (_cursorScrollFrame) return;
+  _cursorScrollFrame = requestAnimationFrame(() => {
+    _cursorScrollFrame = null;
+    const target = _pendingCursorElement;
+    _pendingCursorElement = null;
+    if (!target || !target.isConnected) return;
+
+    const rect = target.getBoundingClientRect();
+    const padding = Math.min(120, Math.max(56, window.innerHeight * 0.16));
+    let delta = 0;
+    if (rect.top < padding) delta = rect.top - padding;
+    else if (rect.bottom > window.innerHeight - padding) delta = rect.bottom - (window.innerHeight - padding);
+    if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
+  });
+}
+
+function patchNotation(changedBeats = null) {
   const root = document.getElementById('notation');
   // หากไม่มี DOM หรือจำนวนบรรทัดเปลี่ยน → rebuild เต็ม
   const expectedLines = Math.ceil(state.numBars / 8);
@@ -381,9 +401,12 @@ function patchNotation() {
   const prev = _patchPrevNotes;
 
   // หา beats ที่เปลี่ยนค่า
-  const dirtyBeats = new Set();
+  const dirtyBeats = new Set(changedBeats || []);
 
-  if (prev) {
+  // การแก้ไขปกติส่งตำแหน่งที่เปลี่ยนเข้ามาโดยตรง เพื่อไม่ต้องไล่ตรวจทุกโน้ต
+  // ของเพลงยาวทุกครั้งที่พิมพ์หนึ่งตัว. เก็บการสแกนทั้งเพลงไว้เฉพาะ caller เก่า
+  // ที่ไม่ได้ระบุตำแหน่ง เพื่อความเข้ากันได้.
+  if (changedBeats === null && prev) {
     const total = state.notes.right.length;
     for (let i = 0; i < total; i++) {
       if (state.notes.right[i] !== prev.right[i] || state.notes.left[i] !== prev.left[i]) {
@@ -471,9 +494,13 @@ function patchNotation() {
     });
   });
 
-  // snapshot สำหรับรอบถัดไป
-  // clone notes เฉพาะเมื่อมี note เปลี่ยนจริง — cursor เดินคนเดียวไม่ต้อง clone
-  if (dirtyBeats.size > 0) {
+  // อัปเดต snapshot เฉพาะช่องที่ caller แจ้ง แทนการ clone array ทั้งเพลงทุกคีย์.
+  if (changedBeats !== null && _patchPrevNotes) {
+    dirtyBeats.forEach(beat => {
+      _patchPrevNotes.right[beat] = state.notes.right[beat];
+      _patchPrevNotes.left[beat] = state.notes.left[beat];
+    });
+  } else if (changedBeats === null && dirtyBeats.size > 0) {
     _patchPrevNotes = { right: state.notes.right.slice(), left: state.notes.left.slice() };
   }
   _patchPrevCursor = cursorBeat;
@@ -634,7 +661,7 @@ function renderNotation() {
         const roomKey = `${hand}:${b}`;
         const isActiveRoom = (state.cursorBeat !== -1 && Math.floor(state.cursorBeat / 4) === b);
         
-        if (state.isMultiSelectMode && state.selectedRooms && (state.selectedRooms.has(`right:${b}`) || state.selectedRooms.has(`left:${b}`))) {
+        if (state.isMultiSelectMode && state.selectedRooms && state.selectedRooms.has(`${hand}:${b}`)) {
           barCell.classList.add('multi-selected-room-box');
         } else if (isActiveRoom && !state.isMultiSelectMode) {
           if (state.isEditMode) barCell.classList.add('edit-room-box');
@@ -710,4 +737,3 @@ function renderNotation() {
   _patchPrevHand = state.hand;
   _patchPrevEditMode = state.isEditMode;
 }
-
