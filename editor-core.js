@@ -249,9 +249,12 @@ let tabHeld = false, shiftHeld = false, arrowUpHeld = false, arrowDownHeld = fal
 function triggerGong(idx) {
   // โหมดรับชม: ห้ามโต้ตอบกับลูกฆ้องทุกกรณี
   if (document.getElementById('focusOverlay')?.classList.contains('active')) return;
-  playGong(idx); flashGong(idx);
+
+  playGong(idx);
+  flashGong(idx);
+
   if (!state.isRecording || !state.isEditMode) return;
-  chordBuffer[state.hand] = idx;
+  chordBuffer[state.hand] = idx; // บันทึกแค่โน้ตหลัก (เสมือนมือขวา)
   if (chordTimer === null) chordTimer = setTimeout(commitChord, 55);
 }
 
@@ -266,6 +269,7 @@ function typeNote(baseIdx) {
 
   if (state.recordMode === 'one') {
       // โหมดมือเดียว: ไม่มีแถวมือซ้าย ปุ่มลัด Tab/Shift/↑/↓ (จับคู่ 2 มือ) จึงไม่มีผลใดๆ
+      // กดโน้ตตัวไหนก็ดังตัวนั้นตัวเดียว เหมือนโน้ตสองมือปกติ — การเล่นคู่แปดทำเฉพาะตอน playback/export เท่านั้น
       rightNote = baseIdx;
   } else if (tabHeld) {
       if (currentInstrument === 'kwy' || currentInstrument === 'ranatek') {
@@ -392,7 +396,9 @@ function pasteRoom() {
     
     for (let i = 0; i < len; i++) {
         state.notes.right[startB + i] = customClipboard.data.right != null ? customClipboard.data.right[i] : null;
-        state.notes.left[startB + i]  = customClipboard.data.left  != null ? customClipboard.data.left[i]  : null;
+        if (state.recordMode !== 'one') {
+          state.notes.left[startB + i]  = customClipboard.data.left  != null ? customClipboard.data.left[i]  : null;
+        }
     }
     renderNotation(); hideCellMenus();
     showToast('วางโน้ต (ทั้ง 2 มือ) เรียบร้อย', 'success');
@@ -447,7 +453,7 @@ function pasteMultiRooms() {
         if (customClipboard.data.right) {
             for (let i = 0; i < len; i++) {
                 state.notes.right[startB + i] = customClipboard.data.right[i];
-                state.notes.left[startB + i] = customClipboard.data.left[i];
+                if (state.recordMode !== 'one') state.notes.left[startB + i] = customClipboard.data.left[i];
             }
         }
     });

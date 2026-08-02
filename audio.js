@@ -49,6 +49,22 @@ window.addEventListener('pagehide', _resetDragSideEffects);
 
 let _cachedNoiseBuf = null;
 let _cachedNoiseSR  = 0;   // sampleRate ที่ใช้สร้าง buffer — แยกออกมาเพราะ AudioBuffer.sampleRate เป็น read-only
+
+// ===== Master bus + Limiter =====
+// กันเสียงแตก/ซ่า/กระตุกตอนหลายลูกดังซ้อนกัน (เสียงค้าง ~2.8s ต่อลูก, คอร์ด, และคู่แปดที่เพิ่มมาทำให้เสียงซ้อนกันบ่อยขึ้น)
+// เดิมทุกลูกฆ้อง/ระนาดต่อตรงเข้า ctx.destination โดยไม่มีการจำกัดระดับเสียงรวม พอสัญญาณรวมเกิน 0dBFS
+// เบราว์เซอร์จะ hard-clip เงียบๆ กลายเป็นเสียงนอยส์/กระตุก ทั้งตอนเล่นสดและตอน export MP3 (คนละ context กัน จึงต้อง cache แยกตาม ctx)
+const _masterBusCache = new WeakMap();
+function getMasterBus(ctx) {
+  if (_masterBusCache.has(ctx)) return _masterBusCache.get(ctx);
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -12; comp.knee.value = 20; comp.ratio.value = 6;
+  comp.attack.value = 0.003; comp.release.value = 0.2;
+  comp.connect(ctx.destination);
+  _masterBusCache.set(ctx, comp);
+  return comp;
+}
+
 function _getNoiseBuf(ctx) {
   const sr = ctx.sampleRate || 44100;
   const isOffline = (window.OfflineAudioContext && ctx instanceof window.OfflineAudioContext)
@@ -78,7 +94,7 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
     const master = ctx.createGain(); master.gain.value = 0.28 * gain;
     
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500; lp.Q.value = 0.4;
-    master.connect(lp); lp.connect(ctx.destination);
+    master.connect(lp); lp.connect(getMasterBus(ctx));
 
     const partials = [
       { ratio: 1.00, gain: 0.62, decay: 2.8 }, { ratio: 2.05, gain: 0.30, decay: 1.6 },
@@ -99,7 +115,7 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
     const buf = _getNoiseBuf(ctx);
     const noise = ctx.createBufferSource(); noise.buffer = buf;
     const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = Math.min(3500, freq * 6); noiseFilter.Q.value = 1.4;
-    const noiseEnv = ctx.createGain(); noiseEnv.gain.setValueAtTime(0.18, t); noiseEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    const noiseEnv = ctx.createGain(); noiseEnv.gain.setValueAtTime(0.11, t); noiseEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
     
     noise.connect(noiseFilter); noiseFilter.connect(noiseEnv); noiseEnv.connect(master); noise.start(t);
     noise.onended = () => { try { noise.disconnect(); noiseFilter.disconnect(); noiseEnv.disconnect(); } catch(e){} };
@@ -122,16 +138,16 @@ function playGong(idx, when) {
 }
 
 // เสียงเคาะจังหวะ (metronome) — คลิกสั้นๆ ความถี่สูง ไม่ปนกับเสียงฆ้อง
-function playMetronomeClick(when) {
+function playMetronomeClick(when, customCtx = null) {
   try {
-    const ctx = ac(); if (!ctx) return null;
+    const ctx = customCtx || ac(); if (!ctx) return null;
     const t = Math.max(ctx.currentTime, (when ?? ctx.currentTime));
     const osc = ctx.createOscillator(); osc.type = 'square'; osc.frequency.value = 1800;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
     env.gain.linearRampToValueAtTime(0.22, t + 0.002);
     env.gain.exponentialRampToValueAtTime(0.0005, t + 0.05);
-    osc.connect(env); env.connect(ctx.destination);
+    osc.connect(env); env.connect(getMasterBus(ctx));
     osc.start(t); osc.stop(t + 0.06);
     osc.onended = () => { try { osc.disconnect(); env.disconnect(); } catch(e) {} };
     return env;
@@ -488,9 +504,27 @@ function scheduleBeat(step, time) {
   const handsToPlay = (state.playMode === 'selection' || state.playMode === 'section' || state.playMode === 'line') ? state.selectionHands : ['right', 'left'];
   
   for (const hand of handsToPlay) {
-      const gong = state.notes[hand][beat]; if (gong == null) continue;
-      const master = playGong(gong, time); if (master) playbackActiveMasters.push(master);
-      playbackVisualTimers.push({ time: Math.max(0, time - 0.005), run: () => flashGong(gong) });
+      const baseGong = state.notes[hand][beat]; 
+      if (baseGong == null) continue;
+
+      let gongsToPlay = [baseGong];
+      
+      // [เพิ่มใหม่] Logic เล่นคู่แปดสำหรับระนาดเอก (โหมดมือเดียว)
+      if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
+          const lowerGong = baseGong - 7; // โน้ตดนตรีไทย 1 คู่แปดห่างกัน 7 เสียง (Index - 7)
+          if (lowerGong >= 0) {
+              // ถ้ายังอยู่ในขอบเขตของเสียงที่ต่ำที่สุด ให้เพิ่มเข้าไปเล่นพร้อมกัน
+              gongsToPlay.push(lowerGong);
+          }
+      }
+
+      for (const gong of gongsToPlay) {
+          const master = playGong(gong, time); 
+          if (master) playbackActiveMasters.push(master);
+          
+          // [แก้ใหม่] กราฟิกไฟกะพริบบนหน้าจอ ให้ขยับทุกโน้ตที่ตี (รวมถึงคู่แปด)
+          playbackVisualTimers.push({ time: Math.max(0, time - 0.005), run: () => flashGong(gong) });
+      }
   }
 
   // เสียงเคาะจังหวะที่โน้ตตัวที่ 4 ของทุกห้อง (beat % 4 === 3) เมื่อเปิด toggle
@@ -706,7 +740,15 @@ async function exportMP3(customSeq = null, suffix = '') {
       const beat = seq[step];
       for (const hand of ['right', 'left']) {
         const g = state.notes[hand][beat];
-        if (g != null) uniqueGongs.add(g);
+        if (g != null) {
+            uniqueGongs.add(g);
+            
+            // [เพิ่มใหม่] ดึงโน้ตคู่แปดมาระบุเพื่อสร้าง Buffer ไว้ล่วงหน้า
+            if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
+                const lowerG = g - 7;
+                if (lowerG >= 0) uniqueGongs.add(lowerG);
+            }
+        }
       }
     }
     const gongList = [...uniqueGongs];
@@ -731,15 +773,32 @@ async function exportMP3(customSeq = null, suffix = '') {
     const duration = seq.length * beatDur + tailSec;
     const renderLength = Math.ceil(sampleRate * duration);
     const offlineCtx = new OfflineCtx(2, renderLength, sampleRate);
+    const exportBus = getMasterBus(offlineCtx); // limiter กันเสียงแตก/นอยส์ตอนหลายลูกซ้อนกันในไฟล์ที่ export ออกมา
+    const metronomeOn = document.getElementById('metronomeToggle')?.checked;
 
     for (let step = 0; step < seq.length; step++) {
       const beat = seq[step]; const t = step * beatDur;
+
+      if (metronomeOn && beat % 4 === 3) playMetronomeClick(t, offlineCtx);
+
       for (const hand of ['right', 'left']) {
-        const gong = state.notes[hand][beat]; if (gong == null) continue;
-        const src = offlineCtx.createBufferSource();
-        src.buffer = gongBuffers[gong];
-        src.connect(offlineCtx.destination);
-        src.start(t);
+        const baseGong = state.notes[hand][beat]; 
+        if (baseGong == null) continue;
+
+        let gongsToRender = [baseGong];
+        
+        // [เพิ่มใหม่] นำโน้ตคู่แปดมาผสมลงใน Timeline ของไฟล์ MP3
+        if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
+            const lowerGong = baseGong - 7;
+            if (lowerGong >= 0) gongsToRender.push(lowerGong);
+        }
+
+        for (const gong of gongsToRender) {
+            const src = offlineCtx.createBufferSource();
+            src.buffer = gongBuffers[gong];
+            src.connect(exportBus);
+            src.start(t);
+        }
       }
     }
 

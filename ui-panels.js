@@ -440,6 +440,9 @@ function initQuickNav() {
     tooltip.textContent = 'กลับบรรทัดที่บันทึก';
     navBtn.classList.add('return-mode');
     nav.classList.remove('at-idle');
+
+    const popupLabel = document.getElementById('gongPopupLabel');
+    if (popupLabel) popupLabel.textContent = `👁️ ดู${getActiveInst().name} — แตะลูก${getActiveInst().name}เพื่อเล่น`;
   }
 
   function closePopup() {
@@ -455,7 +458,7 @@ function initQuickNav() {
     setTimeout(() => { layoutGongs(); _rebuildGongCache(); }, 50);
 
     icon.textContent    = '👁️';
-    tooltip.textContent = 'ไปดูวงฆ้อง';
+    tooltip.textContent = `ไปดู${getActiveInst().name}`;
     navBtn.classList.remove('return-mode');
 
     const _cc = _beatCellMap && _beatCellMap.get(state.cursorBeat);

@@ -13,6 +13,8 @@ function init() {
   renderImeInfographic();
 
   applyRecordModeUI(state.recordMode);
+  const qnavTipInit = document.getElementById('qnavTooltip');
+  if (qnavTipInit) qnavTipInit.textContent = `ไปดู${getActiveInst().name}`;
   initTopControls();
   initExportImportMenus();
   initFocusMode();
@@ -699,7 +701,7 @@ function initCellAndLineMenus() {
           const startB = lineIndex * 32;
           for (let i = 0; i < customClipboard.length; i++) {
               state.notes.right[startB + i] = customClipboard.data.right[i];
-              state.notes.left[startB + i] = customClipboard.data.left[i];
+              if (state.recordMode !== 'one') state.notes.left[startB + i] = customClipboard.data.left[i];
           }
           showToast(`วางลงในบรรทัดที่ ${state.selectedLine} เรียบร้อย`, 'success');
           state.selectedLine = null;

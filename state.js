@@ -67,6 +67,8 @@ function switchInstrument(instId) {
     
     document.getElementById('instPanelTitle').textContent = `${getActiveInst().name} · ${getActiveInst().numGongs} ลูก`;
     document.getElementById('notationSubtitle').textContent = `ทาง${getActiveInst().name}`;
+    const qnavTip = document.getElementById('qnavTooltip');
+    if (qnavTip) qnavTip.textContent = `ไปดู${getActiveInst().name}`;
     
     // ปุ่มทัชคีย์บอร์ด สลับตามเครื่องที่เลือก
     document.getElementById('kb-kwy').style.display = (instId === 'kwy') ? 'block' : 'none';

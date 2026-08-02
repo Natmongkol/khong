@@ -408,7 +408,7 @@ function exportPDF() {
 </table>
 
 <div class="print-actions">
-   <button class="print-btn close" onclick="history.back()">← กลับ</button>
+   <button class="print-btn close" onclick="window.close()">✕ ปิดหน้านี้</button>
    <button class="print-btn" onclick="window.print()">🖨️ พิมพ์/Save</button>
 </div>
 
