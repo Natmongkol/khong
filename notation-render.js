@@ -631,28 +631,25 @@ function renderNotation() {
     }
     
     const activeHands = state.recordMode === 'one' ? ['right'] : ['right', 'left'];
-    const showHandLabel = state.recordMode !== 'one'; // โหมดมือเดียวเหลือแถวเดียว ไม่ต้องระบุว่าเป็นมือไหน
+    const oneHandMode = state.recordMode === 'one'; // โหมดมือเดียวเหลือแถวเดียว ไม่ต้องระบุว่าเป็นมือไหน (แต่ยังต้องกดเลือกทั้งบรรทัดได้)
 
     activeHands.forEach(hand => {
       const row = document.createElement('div'); row.className = 'bar-row ' + hand;
       const labelWidth = window.innerWidth <= 400 ? '24px' : '72px';
       const actionWidth = window.innerWidth <= 400 ? '24px' : '28px';
-      // ทั้งสองแถวใช้ gridTemplateColumns เดียวกัน เพื่อให้กว้างเท่ากัน (ยกเว้นโหมดมือเดียวที่ไม่มีคอลัมน์ label)
-      row.style.gridTemplateColumns = showHandLabel
-        ? `${labelWidth} repeat(8, 1fr) ${actionWidth}`
-        : `repeat(8, 1fr) ${actionWidth}`;
+      // โหมดมือเดียว: คอลัมน์ label แคบลงเหลือเท่าคอลัมน์ปุ่ม (ไม่มีข้อความ) แต่ "ยังคงมีอยู่" เพื่อให้กดเลือกทั้งบรรทัดได้เหมือนเดิม
+      const labelColWidth = oneHandMode ? actionWidth : labelWidth;
+      row.style.gridTemplateColumns = `${labelColWidth} repeat(8, 1fr) ${actionWidth}`;
 
-      if (showHandLabel) {
-        const label = document.createElement('div');
-        label.className = 'hand-label' + (hand === 'right' ? ' clickable' : '');
-        label.textContent = hand === 'right' ? 'มือขวา' : 'มือซ้าย';
+      const label = document.createElement('div');
+      label.className = 'hand-label' + (hand === 'right' ? ' clickable' : '');
+      label.textContent = oneHandMode ? '≡' : (hand === 'right' ? 'มือขวา' : 'มือซ้าย');
 
-        if (hand === 'right') {
-            label.title = 'แตะที่นี่เพื่อคัดลอก/วางบรรทัด';
-        }
-
-        row.appendChild(label);
+      if (hand === 'right') {
+          label.title = 'แตะที่นี่เพื่อคัดลอก/วางบรรทัด';
       }
+
+      row.appendChild(label);
 
       for (let b = startBar; b < startBar + barsInThisLine; b++) {
         const barInLine = b - startBar + 1; 
