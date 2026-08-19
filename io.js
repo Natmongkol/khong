@@ -114,8 +114,8 @@ function exportPDF() {
       if (sectionLeadOpen) contentHTML += '</div>';
       // Keep the title and the first three notation lines together on one page.
       const tempoRate = state.sectionTempoRates && state.sectionTempoRates[lineNum];
-      const tempoRateText = tempoRate ? ` · ${sectionTempoRateLabel(tempoRate)}` : '';
-      contentHTML += `<div class="section-lead"><div class="section-label">${_escHTML(secName + tempoRateText)}</div>`;
+      const sectionHeading = `${tempoRate ? `${sectionTempoRateLabel(tempoRate)} ` : ''}${secName}`;
+      contentHTML += `<div class="section-lead"><div class="section-label">${_escHTML(sectionHeading)}</div>`;
       sectionLeadOpen = true;
       sectionLeadLines = 0;
     }

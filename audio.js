@@ -139,6 +139,12 @@ const KHLUY_SAMPLE_FILES = ['ด.mp3', 'ร.mp3', 'ม.mp3', 'ฟ.mp3', 'ซ.mp3
 let khluySampleBuffers = null;
 let khluySampleLoadPromise = null;
 let activeKhluyVoice = null;
+// ไฟล์ตัวอย่างถูกบันทึกมาที่ระดับค่อนข้างสูง จึงเผื่อ headroom ไว้ก่อนรวมกับฉิ่ง/เมโทรนอม
+// เพื่อไม่ให้สัญญาณรวมชนกันจนเกิด clipping หรือ compressor pumping.
+const KHLUY_PLAYBACK_GAIN = 0.46;
+const CHING_PLAYBACK_GAIN = 0.28;
+const METRONOME_PLAYBACK_GAIN = 0.10;
+const SAMPLE_ATTACK_SEC = 0.008;
 // จำกัดเสียงขลุ่ยแต่ละโน้ตไม่ให้ยาวเกิน 1 ห้อง (4 จังหวะ)
 const KHLUY_MAX_BEATS_PER_NOTE = 4;
 
@@ -150,10 +156,15 @@ function stopKhluyVoice(voice, when) {
   if (!voice) return;
   const t = Math.max(voice.ctx.currentTime, when);
   try {
-    voice.level.gain.cancelScheduledValues(t);
-    voice.level.gain.setValueAtTime(0.72, t);
-    voice.level.gain.linearRampToValueAtTime(0, t + 0.015);
-    voice.source.stop(t + 0.02);
+    // คง envelope ณ เวลาที่ถูกตัดก่อน แล้วค่อยลดลง: ห้ามตั้ง gain กลับไปเป็นค่าคงที่
+    // เพราะหากโน้ตก่อนหน้ากำลัง fade out จะเกิดการกระโดดของ waveform และได้ยินเป็นเสียงช็อต
+    if (typeof voice.level.gain.cancelAndHoldAtTime === 'function') {
+      voice.level.gain.cancelAndHoldAtTime(t);
+    } else {
+      voice.level.gain.cancelScheduledValues(t);
+    }
+    voice.level.gain.linearRampToValueAtTime(0, t + 0.025);
+    voice.source.stop(t + 0.03);
   } catch (_) {}
 }
 
@@ -187,14 +198,16 @@ function playKhluySample(idx, when, gain = 1, customCtx = null) {
     const ctx = customCtx || ac(); if (!ctx) return null;
     const t = Math.max(ctx.currentTime, when ?? ctx.currentTime);
     const source = ctx.createBufferSource(); source.buffer = buffer;
-    const level = ctx.createGain(); level.gain.value = 0.72 * gain;
+    const level = ctx.createGain(); level.gain.value = 0;
     // ขลุ่ยเป็นเครื่องเดี่ยว: โน้ตใหม่ต้องหยุดโน้ตก่อนหน้า ไม่ปล่อยให้เสียงซ้อนกัน
     if (!customCtx && activeKhluyVoice) stopKhluyVoice(activeKhluyVoice, t);
     source.connect(level); level.connect(getMasterBus(ctx));
     const duration = Math.min(buffer.duration, khluyNoteDuration());
     const fadeStart = Math.max(t, t + duration - 0.05);
-    level.gain.setValueAtTime(0.72 * gain, t);
-    level.gain.setValueAtTime(0.72 * gain, fadeStart);
+    // ให้ waveform ขึ้นจากศูนย์อย่างนุ่มนวล ป้องกัน click จากจุดเริ่มของไฟล์ MP3
+    level.gain.setValueAtTime(0, t);
+    level.gain.linearRampToValueAtTime(KHLUY_PLAYBACK_GAIN * gain, t + SAMPLE_ATTACK_SEC);
+    level.gain.setValueAtTime(KHLUY_PLAYBACK_GAIN * gain, fadeStart);
     level.gain.linearRampToValueAtTime(0, t + duration);
     source.start(t);
     source.stop(t + duration + 0.01);
@@ -242,8 +255,11 @@ function playChingSample(sampleIdx, when, customCtx = null) {
     const ctx = customCtx || ac(); if (!ctx) return null;
     const t = Math.max(ctx.currentTime, when ?? ctx.currentTime);
     const source = ctx.createBufferSource(); source.buffer = buffer;
-    const level = ctx.createGain(); level.gain.value = 0.7;
+    const level = ctx.createGain(); level.gain.value = 0;
     source.connect(level); level.connect(getMasterBus(ctx));
+    // ฉิ่งเป็นเสียงกระทบ จึงใช้ attack สั้นมากพอรักษาหัวเสียง แต่ตัด click จากขอบไฟล์ได้
+    level.gain.setValueAtTime(0, t);
+    level.gain.linearRampToValueAtTime(CHING_PLAYBACK_GAIN, t + 0.003);
     source.start(t);
     source.onended = () => { try { source.disconnect(); level.disconnect(); } catch (_) {} };
     return level;
@@ -299,7 +315,7 @@ function playMetronomeClick(when, customCtx = null) {
     const osc = ctx.createOscillator(); osc.type = 'square'; osc.frequency.value = 1800;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.22, t + 0.002);
+    env.gain.linearRampToValueAtTime(METRONOME_PLAYBACK_GAIN, t + 0.002);
     env.gain.exponentialRampToValueAtTime(0.0005, t + 0.05);
     osc.connect(env); env.connect(getMasterBus(ctx));
     osc.start(t); osc.stop(t + 0.06);
@@ -323,7 +339,9 @@ function getPlaybackSequence() {
     if (state.repeats && state.repeats[currentLine] !== undefined && !repeated.has(currentLine)) {
       repeated.add(currentLine); 
       let target = parseInt(state.repeats[currentLine], 10);
-      if (target >= 1 && target <= currentLine) { currentLine = target; continue; }
+      if (target >= 1 && target <= currentLine) {
+        currentLine = target; continue;
+      }
     }
     currentLine++;
   }
@@ -655,7 +673,12 @@ function setScrollTarget(wrapper, target, instant = false) {
 
 function scheduleBeat(step, time) {
   const beat = playbackSeq[step];
-  const handsToPlay = (state.playMode === 'selection' || state.playMode === 'section' || state.playMode === 'line') ? state.selectionHands : ['right', 'left'];
+  // ขลุ่ยเป็นเครื่องเดี่ยว: ไม่เล่นข้อมูลมือซ้ายที่อาจค้างมาจากเพลง/เครื่องดนตรีก่อนหน้า
+  const handsToPlay = currentInstrument === 'khluy'
+    ? ['right']
+    : (state.playMode === 'selection' || state.playMode === 'section' || state.playMode === 'line')
+      ? state.selectionHands
+      : ['right', 'left'];
   
   for (const hand of handsToPlay) {
       const baseGong = state.notes[hand][beat]; 
@@ -935,7 +958,7 @@ async function exportMP3(customSeq = null, suffix = '') {
     const uniqueGongs = new Set();
     for (let step = 0; step < seq.length; step++) {
       const beat = seq[step];
-      for (const hand of ['right', 'left']) {
+      for (const hand of (isKhluy ? ['right'] : ['right', 'left'])) {
         const g = state.notes[hand][beat];
         if (g != null) {
             uniqueGongs.add(g);
@@ -1007,14 +1030,16 @@ async function exportMP3(customSeq = null, suffix = '') {
           if (chingHit !== null) {
             const src = offlineCtx.createBufferSource();
             src.buffer = chingSampleBuffers[chingHit];
-            const level = offlineCtx.createGain(); level.gain.value = 0.7;
+            const level = offlineCtx.createGain(); level.gain.value = 0;
+            level.gain.setValueAtTime(0, Math.max(0, relativeTime));
+            level.gain.linearRampToValueAtTime(CHING_PLAYBACK_GAIN, Math.max(0, relativeTime) + 0.003);
             src.connect(level); level.connect(exportBus);
             if (relativeTime < 0) src.start(0, -relativeTime);
             else src.start(relativeTime);
           }
         }
 
-        for (const hand of ['right', 'left']) {
+        for (const hand of (isKhluy ? ['right'] : ['right', 'left'])) {
           const baseGong = state.notes[hand][beat];
           if (baseGong == null) continue;
           const gongsToRender = [baseGong];
@@ -1037,8 +1062,9 @@ async function exportMP3(customSeq = null, suffix = '') {
               // ส่งออกแบบเสียงเดี่ยวเช่นเดียวกับการเล่นสด: โน้ตใหม่หยุดโน้ตก่อนหน้า
               if (previousKhluyExportVoice) stopKhluyVoice(previousKhluyExportVoice, startAt);
               const fadeStart = Math.max(startAt, startAt + duration - 0.05);
-              level.gain.setValueAtTime(0.72, startAt);
-              level.gain.setValueAtTime(0.72, fadeStart);
+              level.gain.setValueAtTime(0, startAt);
+              level.gain.linearRampToValueAtTime(KHLUY_PLAYBACK_GAIN, startAt + SAMPLE_ATTACK_SEC);
+              level.gain.setValueAtTime(KHLUY_PLAYBACK_GAIN, fadeStart);
               level.gain.linearRampToValueAtTime(0, startAt + duration);
               src.connect(level); level.connect(exportBus);
               src.start(startAt, offset, duration);

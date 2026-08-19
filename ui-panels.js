@@ -45,25 +45,29 @@ function positionMenuForCell(menu) {
       if (!cell) return;
       
       const rect = cell.getBoundingClientRect();
+      // วางเมนูนอก "ทั้งบรรทัด" แทนการวางชิดช่องที่กด เพื่อไม่ให้เมนูบังโน้ต
+      // หรือห้องอื่นในตารางเดียวกัน โดยเฉพาะเมื่อใช้งานบนจอเล็ก
+      const lineRect = cell.closest('.line-wrap')?.getBoundingClientRect() || rect;
       const menuWidth = menu.offsetWidth || 280;
       let menuX = rect.left + rect.width / 2;
       
       if (menuX - menuWidth / 2 < 10) menuX = menuWidth / 2 + 10;
       if (menuX + menuWidth / 2 > window.innerWidth - 10) menuX = window.innerWidth - menuWidth / 2 - 10;
 
-      let topPx = rect.top - 10 - menu.offsetHeight;
+      const menuHeight = menu.offsetHeight || 100;
+      let topPx = lineRect.bottom + 10;
       let belowMenu = false;
-
-      if (topPx < 60) {
-          belowMenu = true;
-          topPx = rect.bottom + 14;
-      }
 
       const kbEl = document.getElementById('touchKeyboard');
       const kbTop = kbEl ? kbEl.getBoundingClientRect().top : window.innerHeight;
-      if (topPx + (menu.offsetHeight || 100) > kbTop - 10) {
-          topPx = rect.top - 10 - (menu.offsetHeight || 100);
-          belowMenu = false;
+      // ถ้าด้านล่างไม่พอ ให้ย้ายไปไว้เหนือทั้งบรรทัด; ทั้งสองตำแหน่งจะไม่ทับแถวโน้ตที่เลือก
+      if (topPx + menuHeight > kbTop - 10) {
+          topPx = lineRect.top - 10 - menuHeight;
+          belowMenu = true;
+      }
+      // กรณีพื้นที่แนวตั้งคับมาก: ยึดใน viewport โดยยังเว้นขอบไว้
+      if (topPx < 10) {
+          topPx = 10;
       }
 
       menu.classList.toggle('menu-below', belowMenu);
