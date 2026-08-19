@@ -24,6 +24,8 @@ function restoreProjectData(data, preserveUndo = false) {
       document.getElementById('kb-kwy').style.display = (importedInstrument === 'kwy') ? 'block' : 'none';
       document.getElementById('kb-kmwy').style.display = (importedInstrument === 'kmwy') ? 'block' : 'none';
       document.getElementById('kb-ranatek').style.display = (importedInstrument === 'ranatek') ? 'block' : 'none';
+      document.getElementById('kb-khluy').style.display = (importedInstrument === 'khluy') ? 'block' : 'none';
+      applyInstrumentUIConstraints(importedInstrument);
       renderImeInfographic();
       renderGongs();
   }
@@ -52,6 +54,14 @@ function restoreProjectData(data, preserveUndo = false) {
       if (validLine(line) && typeof name === 'string') state.sections[line] = name.slice(0, 100);
     }
   }
+  state.sectionTempoRates = {};
+  if (data.sectionTempoRates && typeof data.sectionTempoRates === 'object') {
+    for (const [line, rate] of Object.entries(data.sectionTempoRates)) {
+      if (validLine(line) && Object.prototype.hasOwnProperty.call(SECTION_TEMPO_RATES, rate)) {
+        state.sectionTempoRates[line] = rate;
+      }
+    }
+  }
   state.lineLengths = {};
   if (data.lineLengths && typeof data.lineLengths === 'object') {
     for (const [line, length] of Object.entries(data.lineLengths)) {
@@ -70,7 +80,9 @@ function restoreProjectData(data, preserveUndo = false) {
   state.notes.left  = clampNotes(data.notes.left);
 
   // โหมดบันทึกโน้ต: ใช้ค่าที่บันทึกไว้ในไฟล์ ถ้าไม่มี (ไฟล์เก่าก่อนมีฟีเจอร์นี้) ให้ถือเป็นสองมือ (ค่าเริ่มต้นเดิม)
-  state.recordMode = (data.recordMode === 'one') ? 'one' : 'two';
+  // เครื่องที่บันทึกได้แค่มือเดียว (เช่น ขลุ่ยเพียงออ) บังคับเป็นมือเดียวเสมอ ไม่ว่าไฟล์จะบันทึกไว้อย่างไร
+  const forceOneHand = !!(INSTRUMENTS[importedInstrument] && INSTRUMENTS[importedInstrument].oneHandOnly);
+  state.recordMode = (data.recordMode === 'one' || forceOneHand) ? 'one' : 'two';
   if (state.recordMode === 'one') { state.notes.left.fill(null); state.hand = 'right'; }
   applyRecordModeUI(state.recordMode);
   
@@ -101,7 +113,9 @@ function exportPDF() {
     if (secName !== null) {
       if (sectionLeadOpen) contentHTML += '</div>';
       // Keep the title and the first three notation lines together on one page.
-      contentHTML += `<div class="section-lead"><div class="section-label">${_escHTML(secName)}</div>`;
+      const tempoRate = state.sectionTempoRates && state.sectionTempoRates[lineNum];
+      const tempoRateText = tempoRate ? ` · ${sectionTempoRateLabel(tempoRate)}` : '';
+      contentHTML += `<div class="section-lead"><div class="section-label">${_escHTML(secName + tempoRateText)}</div>`;
       sectionLeadOpen = true;
       sectionLeadLines = 0;
     }
@@ -501,6 +515,7 @@ const PDF_IMPORT = (() => {
     document.getElementById('numVak').value = numVaks;
 
     state.sections = {};
+    state.sectionTempoRates = {};
     state.repeats  = {};
     state.lineLengths = {};
     state._editingSection = null;

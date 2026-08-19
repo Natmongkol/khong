@@ -133,11 +133,165 @@ function playGongFreq(freq, when, gain = 1, customCtx = null) {
   } catch (err) { return null; }
 }
 
+// ===== ขลุ่ยเพียงออ: เสียงตัวอย่างที่บันทึกจากเครื่องจริง =====
+// เก็บไฟล์ไว้ใน assets/khluy และโหลดครั้งเดียว แล้วใช้ได้ทั้งการเล่นสดและ export MP3
+const KHLUY_SAMPLE_FILES = ['ด.mp3', 'ร.mp3', 'ม.mp3', 'ฟ.mp3', 'ซ.mp3', 'ล.mp3', 'ท.mp3', 'ดํ.mp3'];
+let khluySampleBuffers = null;
+let khluySampleLoadPromise = null;
+let activeKhluyVoice = null;
+// จำกัดเสียงขลุ่ยแต่ละโน้ตไม่ให้ยาวเกิน 1 ห้อง (4 จังหวะ)
+const KHLUY_MAX_BEATS_PER_NOTE = 4;
+
+function khluyNoteDuration() {
+  return KHLUY_MAX_BEATS_PER_NOTE * (60 / state.bpm);
+}
+
+function stopKhluyVoice(voice, when) {
+  if (!voice) return;
+  const t = Math.max(voice.ctx.currentTime, when);
+  try {
+    voice.level.gain.cancelScheduledValues(t);
+    voice.level.gain.setValueAtTime(0.72, t);
+    voice.level.gain.linearRampToValueAtTime(0, t + 0.015);
+    voice.source.stop(t + 0.02);
+  } catch (_) {}
+}
+
+async function ensureKhluySamples() {
+  if (khluySampleBuffers) return khluySampleBuffers;
+  if (khluySampleLoadPromise) return khluySampleLoadPromise;
+
+  const ctx = ac();
+  if (!ctx) throw new Error('ไม่สามารถเริ่มระบบเสียงได้');
+  khluySampleLoadPromise = Promise.all(KHLUY_SAMPLE_FILES.map(async (fileName) => {
+    const response = await fetch(`assets/khluy/${encodeURIComponent(fileName)}`);
+    if (!response.ok) throw new Error(`ไม่พบไฟล์เสียงขลุ่ย ${fileName}`);
+    return ctx.decodeAudioData(await response.arrayBuffer());
+  })).then((buffers) => {
+    khluySampleBuffers = buffers;
+    return buffers;
+  }).catch((error) => {
+    khluySampleLoadPromise = null;
+    throw error;
+  });
+  return khluySampleLoadPromise;
+}
+
+function playKhluySample(idx, when, gain = 1, customCtx = null) {
+  const buffer = khluySampleBuffers && khluySampleBuffers[idx];
+  if (!buffer) {
+    ensureKhluySamples().catch((error) => console.error('โหลดเสียงขลุ่ยไม่สำเร็จ:', error));
+    return null;
+  }
+  try {
+    const ctx = customCtx || ac(); if (!ctx) return null;
+    const t = Math.max(ctx.currentTime, when ?? ctx.currentTime);
+    const source = ctx.createBufferSource(); source.buffer = buffer;
+    const level = ctx.createGain(); level.gain.value = 0.72 * gain;
+    // ขลุ่ยเป็นเครื่องเดี่ยว: โน้ตใหม่ต้องหยุดโน้ตก่อนหน้า ไม่ปล่อยให้เสียงซ้อนกัน
+    if (!customCtx && activeKhluyVoice) stopKhluyVoice(activeKhluyVoice, t);
+    source.connect(level); level.connect(getMasterBus(ctx));
+    const duration = Math.min(buffer.duration, khluyNoteDuration());
+    const fadeStart = Math.max(t, t + duration - 0.05);
+    level.gain.setValueAtTime(0.72 * gain, t);
+    level.gain.setValueAtTime(0.72 * gain, fadeStart);
+    level.gain.linearRampToValueAtTime(0, t + duration);
+    source.start(t);
+    source.stop(t + duration + 0.01);
+    if (!customCtx) activeKhluyVoice = { source, level, ctx };
+    source.onended = () => {
+      if (activeKhluyVoice && activeKhluyVoice.source === source) activeKhluyVoice = null;
+      try { source.disconnect(); level.disconnect(); } catch (_) {}
+    };
+    return level;
+  } catch (error) { return null; }
+}
+
+// ===== ฉิ่ง/ฉับ: เสียงประกอบตามอัตราจังหวะของท่อน =====
+const CHING_SAMPLE_FILES = ['ฉิ่ง.mp3', 'ฉับ.mp3'];
+let chingSampleBuffers = null;
+let chingSampleLoadPromise = null;
+
+async function ensureChingSamples() {
+  if (chingSampleBuffers) return chingSampleBuffers;
+  if (chingSampleLoadPromise) return chingSampleLoadPromise;
+
+  const ctx = ac();
+  if (!ctx) throw new Error('ไม่สามารถเริ่มระบบเสียงได้');
+  chingSampleLoadPromise = Promise.all(CHING_SAMPLE_FILES.map(async (fileName) => {
+    const response = await fetch(`assets/ching/${encodeURIComponent(fileName)}`);
+    if (!response.ok) throw new Error(`ไม่พบไฟล์เสียง ${fileName}`);
+    return ctx.decodeAudioData(await response.arrayBuffer());
+  })).then((buffers) => {
+    chingSampleBuffers = buffers;
+    return buffers;
+  }).catch((error) => {
+    chingSampleLoadPromise = null;
+    throw error;
+  });
+  return chingSampleLoadPromise;
+}
+
+function playChingSample(sampleIdx, when, customCtx = null) {
+  const buffer = chingSampleBuffers && chingSampleBuffers[sampleIdx];
+  if (!buffer) {
+    ensureChingSamples().catch((error) => console.error('โหลดเสียงฉิ่งไม่สำเร็จ:', error));
+    return null;
+  }
+  try {
+    const ctx = customCtx || ac(); if (!ctx) return null;
+    const t = Math.max(ctx.currentTime, when ?? ctx.currentTime);
+    const source = ctx.createBufferSource(); source.buffer = buffer;
+    const level = ctx.createGain(); level.gain.value = 0.7;
+    source.connect(level); level.connect(getMasterBus(ctx));
+    source.start(t);
+    source.onended = () => { try { source.disconnect(); level.disconnect(); } catch (_) {} };
+    return level;
+  } catch (_) { return null; }
+}
+
+// รูปแบบฉิ่ง/ฉับของ 1 บรรทัด (8 ห้อง × 4 โน้ต)
+// - สามชั้น: ฉิ่ง ห้อง 2, 6 โน้ต 4 | ฉับ ห้อง 4, 8 โน้ต 4
+// - สองชั้น: ฉิ่ง ห้อง 1, 3, 5, 7 โน้ต 4 | ฉับ ห้อง 2, 4, 6, 8 โน้ต 4
+// - ชั้นเดียว: ฉิ่ง โน้ต 2 ทุกห้อง | ฉับ โน้ต 4 ทุกห้อง
+function getChingHitForBeat(beat) {
+  const lineNum = Math.floor(beat / 32) + 1;
+  const rate = effectiveSectionTempoRate(lineNum);
+  const beatInLine = beat % 32;
+  const roomIndex = Math.floor(beatInLine / 4) + 1; // ห้อง 1–8
+  const noteInRoom = (beatInLine % 4) + 1;          // โน้ต 1–4
+
+  if (rate === 'sam-chan') {
+    if (noteInRoom !== 4) return null;
+    return (roomIndex === 2 || roomIndex === 6) ? 0
+      : (roomIndex === 4 || roomIndex === 8) ? 1 : null;
+  }
+  if (rate === 'song-chan') {
+    if (noteInRoom !== 4) return null;
+    return roomIndex % 2 === 1 ? 0 : 1;
+  }
+  // ชั้นเดียว
+  if (noteInRoom === 2) return 0;
+  if (noteInRoom === 4) return 1;
+  return null;
+}
+
+const chingToggle = document.getElementById('chingToggle');
+if (chingToggle) {
+  chingToggle.addEventListener('change', () => {
+    if (chingToggle.checked) ensureChingSamples().catch((error) => {
+      console.error('โหลดเสียงฉิ่งไม่สำเร็จ:', error);
+      showToast('โหลดเสียงฉิ่งไม่สำเร็จ โปรดตรวจสอบไฟล์เสียง', 'error');
+    });
+  });
+}
+
 function playGong(idx, when) { 
+    if (currentInstrument === 'khluy') return playKhluySample(idx, when);
     return playGongFreq(getActiveInst().freqs[idx], when); 
 }
 
-// เสียงเคาะจังหวะ (metronome) — คลิกสั้นๆ ความถี่สูง ไม่ปนกับเสียงฆ้อง
+// เสียงเคาะจังหวะเดิม: คลิกสั้น ๆ ความถี่สูง
 function playMetronomeClick(when, customCtx = null) {
   try {
     const ctx = customCtx || ac(); if (!ctx) return null;
@@ -527,11 +681,20 @@ function scheduleBeat(step, time) {
       }
   }
 
-  // เสียงเคาะจังหวะที่โน้ตตัวที่ 4 ของทุกห้อง (beat % 4 === 3) เมื่อเปิด toggle
+  // เมื่อเปิดเมโทรนอม ให้เคาะทุกตัวโน้ตตาม BPM
   const metronomeEl = document.getElementById('metronomeToggle');
-  if (metronomeEl && metronomeEl.checked && beat % 4 === 3) {
+  if (metronomeEl && metronomeEl.checked) {
     const clickNode = playMetronomeClick(time);
     if (clickNode) playbackActiveMasters.push(clickNode);
+  }
+
+  const chingEl = document.getElementById('chingToggle');
+  if (chingEl && chingEl.checked) {
+    const chingHit = getChingHitForBeat(beat);
+    if (chingHit !== null) {
+      const chingNode = playChingSample(chingHit, time);
+      if (chingNode) playbackActiveMasters.push(chingNode);
+    }
   }
   
   playbackVisualTimers.push({ time, run: () => {
@@ -744,10 +907,23 @@ async function exportMP3(customSeq = null, suffix = '') {
     await ensureLamejs();
     throwIfMp3ExportCancelled();
 
+    const isKhluy = currentInstrument === 'khluy';
+    const chingOn = !!document.getElementById('chingToggle')?.checked;
+    if (isKhluy) {
+      setExportProgress(5, 'กำลังโหลดเสียงขลุ่ยจริง...');
+      await ensureKhluySamples();
+      throwIfMp3ExportCancelled();
+    }
+    if (chingOn) {
+      setExportProgress(6, 'กำลังโหลดเสียงฉิ่ง...');
+      await ensureChingSamples();
+      throwIfMp3ExportCancelled();
+    }
+
     const tailSec = Math.max(3.5, beatDur * 4);
     startExportTimer(songDurationSec);
 
-    setExportProgress(8, 'เตรียมเสียงลูกฆ้อง...');
+    setExportProgress(8, isKhluy ? 'เตรียมเสียงขลุ่ย...' : 'เตรียมเสียงลูกฆ้อง...');
     await new Promise(r => setTimeout(r, 10));
     throwIfMp3ExportCancelled();
 
@@ -775,19 +951,28 @@ async function exportMP3(customSeq = null, suffix = '') {
     const gongList = [...uniqueGongs];
     const gongBuffers = {};
 
-    const oneShotDur = 3.2; 
+    let oneShotDur = isKhluy
+      ? Math.max(...gongList.map((idx) => khluySampleBuffers[idx].duration))
+      : 3.2;
+    if (chingOn) oneShotDur = Math.max(oneShotDur, ...chingSampleBuffers.map((buffer) => buffer.duration));
     const oneShotLen = Math.ceil(sampleRate * oneShotDur);
 
     for (let gi = 0; gi < gongList.length; gi++) {
       throwIfMp3ExportCancelled();
       const gongIdx = gongList[gi];
-      const freq = inst.freqs[gongIdx];
-      const miniCtx = new OfflineCtx(2, oneShotLen, sampleRate);
-      playGongFreq(freq, 0, 1, miniCtx);
-      gongBuffers[gongIdx] = await miniCtx.startRendering();
+      if (isKhluy) {
+        gongBuffers[gongIdx] = khluySampleBuffers[gongIdx];
+      } else {
+        const freq = inst.freqs[gongIdx];
+        const miniCtx = new OfflineCtx(2, oneShotLen, sampleRate);
+        playGongFreq(freq, 0, 1, miniCtx);
+        gongBuffers[gongIdx] = await miniCtx.startRendering();
+      }
       throwIfMp3ExportCancelled();
       const pct = 8 + Math.round(((gi + 1) / gongList.length) * 22); 
-      setExportProgress(pct, `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
+      setExportProgress(pct, isKhluy
+        ? `เตรียมเสียงขลุ่ย ${gi + 1}/${gongList.length} ตัว...`
+        : `เตรียมเสียง ${gi + 1}/${gongList.length} ลูก...`);
     }
 
     // Render/encode ทีละช่วง เพื่อไม่สร้าง PCM ของทั้งเพลงพร้อมกันในหน่วยความจำ.
@@ -811,11 +996,23 @@ async function exportMP3(customSeq = null, suffix = '') {
       const offlineCtx = new OfflineCtx(2, Math.ceil(sampleRate * chunkDuration), sampleRate);
       const exportBus = getMasterBus(offlineCtx);
       const firstAudibleStep = Math.max(0, Math.ceil((chunkStartSec - oneShotDur) / beatDur));
+      let previousKhluyExportVoice = null;
 
       for (let step = firstAudibleStep; step < chunkEnd; step++) {
         const beat = seq[step];
         const relativeTime = step * beatDur - chunkStartSec;
-        if (metronomeOn && relativeTime >= 0 && beat % 4 === 3) playMetronomeClick(relativeTime, offlineCtx);
+        if (metronomeOn && relativeTime >= 0) playMetronomeClick(relativeTime, offlineCtx);
+        if (chingOn) {
+          const chingHit = getChingHitForBeat(beat);
+          if (chingHit !== null) {
+            const src = offlineCtx.createBufferSource();
+            src.buffer = chingSampleBuffers[chingHit];
+            const level = offlineCtx.createGain(); level.gain.value = 0.7;
+            src.connect(level); level.connect(exportBus);
+            if (relativeTime < 0) src.start(0, -relativeTime);
+            else src.start(relativeTime);
+          }
+        }
 
         for (const hand of ['right', 'left']) {
           const baseGong = state.notes[hand][beat];
@@ -828,9 +1025,29 @@ async function exportMP3(customSeq = null, suffix = '') {
           for (const gong of gongsToRender) {
             const src = offlineCtx.createBufferSource();
             src.buffer = gongBuffers[gong];
-            src.connect(exportBus);
-            if (relativeTime < 0) src.start(0, -relativeTime);
-            else src.start(relativeTime);
+            if (isKhluy) {
+              const level = offlineCtx.createGain();
+              const startAt = Math.max(0, relativeTime);
+              const offset = Math.max(0, -relativeTime);
+              const duration = Math.min(
+                src.buffer.duration - offset,
+                khluyNoteDuration() - offset
+              );
+              if (duration <= 0) continue;
+              // ส่งออกแบบเสียงเดี่ยวเช่นเดียวกับการเล่นสด: โน้ตใหม่หยุดโน้ตก่อนหน้า
+              if (previousKhluyExportVoice) stopKhluyVoice(previousKhluyExportVoice, startAt);
+              const fadeStart = Math.max(startAt, startAt + duration - 0.05);
+              level.gain.setValueAtTime(0.72, startAt);
+              level.gain.setValueAtTime(0.72, fadeStart);
+              level.gain.linearRampToValueAtTime(0, startAt + duration);
+              src.connect(level); level.connect(exportBus);
+              src.start(startAt, offset, duration);
+              previousKhluyExportVoice = { source: src, level, ctx: offlineCtx };
+            } else {
+              src.connect(exportBus);
+              if (relativeTime < 0) src.start(0, -relativeTime);
+              else src.start(relativeTime);
+            }
           }
         }
       }

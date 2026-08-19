@@ -53,7 +53,7 @@ function initTopControls() {
   });
   
   document.getElementById('bpm').addEventListener('input', (e) => { 
-    state.bpm = Math.max(30, Math.min(300, +e.target.value || 200)); 
+    state.bpm = Math.max(30, Math.min(300, +e.target.value || 120)); 
     scheduleAutosave();
   });
   // เมื่อพิมพ์เสร็จ (blur) ให้ปรับตัวเลขในช่องให้ตรงกับค่าที่ clamp แล้วจริงๆ กันช่องโชว์ค่าที่เกินขอบเขต (เช่น 500) ทั้งที่เพลงเล่นที่ 300
@@ -91,6 +91,7 @@ function initTopControls() {
         state.notes.left = new Array(32).fill(null);
         state.lineLengths = {};
         state.sections = {};
+        state.sectionTempoRates = {};
         state.repeats = {};
         state.cursorBeat = 0;
         state.currentBeat = -1;
@@ -133,6 +134,7 @@ function initTopControls() {
     state.notes.left = new Array(32).fill(null);
     state.lineLengths = {};
     state.sections = {};
+    state.sectionTempoRates = {};
     state.repeats = {};
     state.cursorBeat = 0;
     state.currentBeat = -1;
@@ -892,19 +894,29 @@ function initNotationDelegation() {
       const lineWrapEl = secBtn.closest('.line-wrap');
       const lineNum = parseInt(lineWrapEl.dataset.lineNum, 10);
       if (secBtn.classList.contains('add-sec')) {
+        pushUndo();
         state.sections[lineNum] = `ท่อนที่ ${Object.keys(state.sections).length + 1}`;
+        // ท่อนใหม่สืบทอดอัตราจังหวะเดิม จนกว่าผู้ใช้จะเลือกเปลี่ยนเอง
+        delete state.sectionTempoRates[lineNum];
         state._editingSection = lineNum; renderNotation();
       } else if (secBtn.classList.contains('edit-sec')) {
         state._editingSection = lineNum; renderNotation();
       } else if (secBtn.classList.contains('del-sec')) {
-        pushUndo(); delete state.sections[lineNum]; renderNotation();
+        pushUndo(); delete state.sections[lineNum]; delete state.sectionTempoRates[lineNum]; renderNotation();
       } else if (secBtn.classList.contains('cancel-sec')) {
         state._editingSection = null; renderNotation();
       } else if (secBtn.classList.contains('save-sec')) {
         const val = document.getElementById(`secInp-${lineNum}`).value.trim();
+        const rate = document.getElementById(`secTempoRate-${lineNum}`)?.value;
         pushUndo();
-        if (val) state.sections[lineNum] = val;
-        else delete state.sections[lineNum];
+        if (val) {
+          state.sections[lineNum] = val;
+          if (SECTION_TEMPO_RATES[rate]) state.sectionTempoRates[lineNum] = rate;
+          else delete state.sectionTempoRates[lineNum];
+        } else {
+          delete state.sections[lineNum];
+          delete state.sectionTempoRates[lineNum];
+        }
         state._editingSection = null; renderNotation();
       } else if (secBtn.classList.contains('play-sec')) {
         playSection(lineNum);

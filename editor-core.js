@@ -13,6 +13,12 @@ function renderGongs() {
     return;
   }
 
+  // ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรีให้แสดง (เล่น/บันทึกผ่านคีย์บอร์ด/แป้นสัมผัสเท่านั้น)
+  if (inst.noImage) {
+    _rebuildGongCache();
+    return;
+  }
+
   const numGongs = inst.numGongs;
   
   for (let i = 0; i < numGongs; i++) {
@@ -66,6 +72,8 @@ function layoutGongs() {
 
   // ระนาดเอก: ลูกระนาดเรียงด้วย CSS flex ปกติ ไม่ต้องคำนวณตำแหน่งวงกลม
   if (currentInstrument === 'ranatek') return;
+  // ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรีให้จัดวาง
+  if (getActiveInst().noImage) return;
 
   const inst = getActiveInst();
   const numGongs = inst.numGongs;
@@ -519,16 +527,18 @@ function deleteLine(lineIndex) {
     state.numBars -= BARS_PER_VAK;
     document.getElementById('numVak').value = state.numBars / BARS_PER_VAK;
 
-    const newSec = {}; const newRep = {}; const newLen = {};
+    const newSec = {}; const newRep = {}; const newTempoRates = {}; const newLen = {};
     // numBars ถูกลดไปแล้ว ต้องบวก BARS_PER_VAK คืนเพื่อให้ได้จำนวนบรรทัดก่อนลบ
     const totalLinesOld = (state.numBars + BARS_PER_VAK) / BARS_PER_VAK;
     for (let i = 1; i <= totalLinesOld; i++) {
         if (i < lineIndex + 1) {
             if (state.sections[i]) newSec[i] = state.sections[i];
+            if (state.sectionTempoRates[i]) newTempoRates[i] = state.sectionTempoRates[i];
             if (state.repeats[i]) newRep[i] = state.repeats[i];
             if (state.lineLengths[i]) newLen[i] = state.lineLengths[i];
         } else if (i > lineIndex + 1) {
             if (state.sections[i]) newSec[i - 1] = state.sections[i];
+            if (state.sectionTempoRates[i]) newTempoRates[i - 1] = state.sectionTempoRates[i];
             if (state.lineLengths[i]) newLen[i - 1] = state.lineLengths[i];
             if (state.repeats[i]) {
                 let target = state.repeats[i];
@@ -537,7 +547,7 @@ function deleteLine(lineIndex) {
             }
         }
     }
-    state.sections = newSec; state.repeats = newRep; state.lineLengths = newLen;
+    state.sections = newSec; state.sectionTempoRates = newTempoRates; state.repeats = newRep; state.lineLengths = newLen;
     if (state.cursorBeat >= state.notes.right.length) state.cursorBeat = -1;
     renderNotation();
     showToast('ลบบรรทัดเรียบร้อย', 'success');
@@ -552,15 +562,17 @@ function insertLine(lineIndex) {
     state.numBars += BARS_PER_VAK;
     document.getElementById('numVak').value = state.numBars / BARS_PER_VAK;
 
-    const newSec = {}; const newRep = {}; const newLen = {};
+    const newSec = {}; const newRep = {}; const newTempoRates = {}; const newLen = {};
     const totalLinesNew = state.numBars / 8;
     for (let i = totalLinesNew; i >= 1; i--) {
         if (i <= lineIndex + 1) {
             if (state.sections[i]) newSec[i] = state.sections[i];
+            if (state.sectionTempoRates[i]) newTempoRates[i] = state.sectionTempoRates[i];
             if (state.repeats[i]) newRep[i] = state.repeats[i];
             if (state.lineLengths[i]) newLen[i] = state.lineLengths[i];
         } else {
             if (state.sections[i - 1]) newSec[i] = state.sections[i - 1];
+            if (state.sectionTempoRates[i - 1]) newTempoRates[i] = state.sectionTempoRates[i - 1];
             if (state.lineLengths[i - 1]) newLen[i] = state.lineLengths[i - 1];
             if (state.repeats[i - 1]) {
                 let target = state.repeats[i - 1];
@@ -569,7 +581,7 @@ function insertLine(lineIndex) {
             }
         }
     }
-    state.sections = newSec; state.repeats = newRep; state.lineLengths = newLen;
+    state.sections = newSec; state.sectionTempoRates = newTempoRates; state.repeats = newRep; state.lineLengths = newLen;
     if (state.cursorBeat >= insertAt) state.cursorBeat += 32;
     renderNotation();
     showToast('แทรกบรรทัดใหม่แล้ว', 'success');
@@ -595,6 +607,10 @@ function moveLineUp(lineIndex) {
     const tempSec = state.sections[L2];
     if (state.sections[L1]) state.sections[L2] = state.sections[L1]; else delete state.sections[L2];
     if (tempSec) state.sections[L1] = tempSec; else delete state.sections[L1];
+
+    const tempTempoRate = state.sectionTempoRates[L2];
+    if (state.sectionTempoRates[L1]) state.sectionTempoRates[L2] = state.sectionTempoRates[L1]; else delete state.sectionTempoRates[L2];
+    if (tempTempoRate) state.sectionTempoRates[L1] = tempTempoRate; else delete state.sectionTempoRates[L1];
 
     const tempRep = state.repeats[L2];
     if (state.repeats[L1]) state.repeats[L2] = state.repeats[L1]; else delete state.repeats[L2];
@@ -654,6 +670,10 @@ function moveLineUpNoUndo(lineIndex) {
     const tempSec = state.sections[L2];
     if (state.sections[L1]) state.sections[L2] = state.sections[L1]; else delete state.sections[L2];
     if (tempSec) state.sections[L1] = tempSec; else delete state.sections[L1];
+
+    const tempTempoRate = state.sectionTempoRates[L2];
+    if (state.sectionTempoRates[L1]) state.sectionTempoRates[L2] = state.sectionTempoRates[L1]; else delete state.sectionTempoRates[L2];
+    if (tempTempoRate) state.sectionTempoRates[L1] = tempTempoRate; else delete state.sectionTempoRates[L1];
 
     const tempRep = state.repeats[L2];
     if (state.repeats[L1]) state.repeats[L2] = state.repeats[L1]; else delete state.repeats[L2];

@@ -588,6 +588,9 @@ section.panel h3 {
 .btn-sec.play-range-sec:hover { background: var(--accent); color: var(--bg); }
 .btn-sec.del-sec:hover { background: var(--red); color: var(--bg); border-color: var(--red); }
 .sec-input { background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); padding: 3px 8px; font-size: 12px; font-family: inherit; width: 180px; outline: none; }
+.sec-tempo-label { color: var(--muted); font-size: 12px; }
+.sec-tempo-select { background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); padding: 3px 7px; font: inherit; font-size: 12px; outline: none; }
+.sec-tempo-badge { color: var(--gold); font-size: 11px; font-weight: 600; white-space: nowrap; }
 
 .modal-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;

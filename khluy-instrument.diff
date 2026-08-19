@@ -1,0 +1,158 @@
+diff --git a/editor-core.js b/editor-core.js
+index 265876f..d3dec90 100644
+--- a/editor-core.js
++++ b/editor-core.js
+@@ -13,6 +13,12 @@ function renderGongs() {
+     return;
+   }
+ 
++  // ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรีให้แสดง (เล่น/บันทึกผ่านคีย์บอร์ด/แป้นสัมผัสเท่านั้น)
++  if (inst.noImage) {
++    _rebuildGongCache();
++    return;
++  }
++
+   const numGongs = inst.numGongs;
+   
+   for (let i = 0; i < numGongs; i++) {
+@@ -66,6 +72,8 @@ function layoutGongs() {
+ 
+   // ระนาดเอก: ลูกระนาดเรียงด้วย CSS flex ปกติ ไม่ต้องคำนวณตำแหน่งวงกลม
+   if (currentInstrument === 'ranatek') return;
++  // ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรีให้จัดวาง
++  if (getActiveInst().noImage) return;
+ 
+   const inst = getActiveInst();
+   const numGongs = inst.numGongs;
+diff --git a/index.html b/index.html
+index 76f8e73..0e0d3d6 100644
+--- a/index.html
++++ b/index.html
+@@ -25,6 +25,7 @@
+       <option value="kwy">◉ เครื่องดนตรี: ฆ้องวงใหญ่</option>
+       <option value="kmwy">◉ เครื่องดนตรี: ฆ้องมอญวงใหญ่</option>
+       <option value="ranatek">◉ เครื่องดนตรี: ระนาดเอก</option>
++      <option value="khluy">◉ เครื่องดนตรี: ขลุ่ยเพียงออ</option>
+     </select>
+   </div>
+ 
+@@ -137,7 +138,7 @@
+ 
+   <div class="section-spacer"></div>
+ 
+-  <section class="panel">
++  <section class="panel" id="instrumentPanel">
+     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+       <div>
+         <h2>Instrument</h2>
+@@ -162,7 +163,7 @@
+ 
+   <section class="panel">
+     <h3 id="notationSubtitle" style="margin:0 0 12px;">ทางฆ้องวงใหญ่</h3>
+-    <div class="record-mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
++    <div class="record-mode-row" id="recordModeRow" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+       <label for="recordModeSelect" style="font-size:13px; color:var(--muted); white-space:nowrap;">โหมดบันทึกโน้ต:</label>
+       <select id="recordModeSelect" class="inst-select">
+         <option value="two">สองมือ</option>
+@@ -419,6 +420,20 @@
+       </div>
+   </div>
+ 
++  <!-- Keyboard: ขลุ่ยเพียงออ (บันทึกมือเดียวเท่านั้น ไม่มีรูปเครื่องดนตรี) -->
++  <div id="kb-khluy" style="display:none;">
++      <div class="tk-row">
++        <div class="tk-note mid" data-idx="0"><span class="tk-note-name">ด</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="1"><span class="tk-note-name">ร</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="2"><span class="tk-note-name">ม</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="3"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="4"><span class="tk-note-name">ซ</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="5"><span class="tk-note-name">ล</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note mid" data-idx="6"><span class="tk-note-name">ท</span><span class="tk-key-hint">กลาง</span></div>
++        <div class="tk-note high" data-idx="7"><span class="tk-note-name">ด</span><span class="tk-key-hint">สูง</span></div>
++      </div>
++  </div>
++
+   <div class="tk-action-row">
+     <div class="tk-action left"  id="tkLeft">◀ ย้อน</div>
+     <div class="tk-action rest"  id="tkRest">− หยุด</div>
+diff --git a/io.js b/io.js
+index debf084..037af84 100644
+--- a/io.js
++++ b/io.js
+@@ -24,6 +24,8 @@ function restoreProjectData(data, preserveUndo = false) {
+       document.getElementById('kb-kwy').style.display = (importedInstrument === 'kwy') ? 'block' : 'none';
+       document.getElementById('kb-kmwy').style.display = (importedInstrument === 'kmwy') ? 'block' : 'none';
+       document.getElementById('kb-ranatek').style.display = (importedInstrument === 'ranatek') ? 'block' : 'none';
++      document.getElementById('kb-khluy').style.display = (importedInstrument === 'khluy') ? 'block' : 'none';
++      applyInstrumentUIConstraints(importedInstrument);
+       renderImeInfographic();
+       renderGongs();
+   }
+@@ -70,7 +72,9 @@ function restoreProjectData(data, preserveUndo = false) {
+   state.notes.left  = clampNotes(data.notes.left);
+ 
+   // โหมดบันทึกโน้ต: ใช้ค่าที่บันทึกไว้ในไฟล์ ถ้าไม่มี (ไฟล์เก่าก่อนมีฟีเจอร์นี้) ให้ถือเป็นสองมือ (ค่าเริ่มต้นเดิม)
+-  state.recordMode = (data.recordMode === 'one') ? 'one' : 'two';
++  // เครื่องที่บันทึกได้แค่มือเดียว (เช่น ขลุ่ยเพียงออ) บังคับเป็นมือเดียวเสมอ ไม่ว่าไฟล์จะบันทึกไว้อย่างไร
++  const forceOneHand = !!(INSTRUMENTS[importedInstrument] && INSTRUMENTS[importedInstrument].oneHandOnly);
++  state.recordMode = (data.recordMode === 'one' || forceOneHand) ? 'one' : 'two';
+   if (state.recordMode === 'one') { state.notes.left.fill(null); state.hand = 'right'; }
+   applyRecordModeUI(state.recordMode);
+   
+diff --git a/state.js b/state.js
+index f75388d..2e1f873 100644
+--- a/state.js
++++ b/state.js
+@@ -45,11 +45,40 @@ const INSTRUMENTS = {
+             if (idx <= 16) return 'mid';
+             return 'high';
+         }
++    },
++    khluy: {
++        id: 'khluy',
++        name: 'ขลุ่ยเพียงออ',
++        numGongs: 8,
++        freqs: [450, 497, 549, 606, 669, 738, 815, 900],
++        base: ['ด','ร','ม','ฟ','ซ','ล','ท','ด'],
++        display: ['ด','ร','ม','ฟ','ซ','ล','ท','ดํ'],
++        // ขลุ่ยเพียงออ: บันทึกได้แค่มือเดียว และไม่มีรูปเครื่องดนตรีให้แสดง (ดู applyInstrumentUIConstraints)
++        oneHandOnly: true,
++        noImage: true,
++        getNoteRange: (idx) => (idx === 7 ? 'high' : 'mid')
+     }
+ };
+ 
+ let currentInstrument = 'kwy';
+ 
++// ── ข้อจำกัด UI เฉพาะเครื่อง (เช่น ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรี + บันทึกได้แค่มือเดียว) ──
++// ใช้ร่วมกันทั้งตอนสลับเครื่องปกติ (switchInstrument) และตอนโหลด/นำเข้าไฟล์ (restoreProjectData ใน io.js)
++function applyInstrumentUIConstraints(instId) {
++  const inst = INSTRUMENTS[instId];
++  const noImage = !!(inst && inst.noImage);
++
++  const instPanel = document.getElementById('instrumentPanel');
++  if (instPanel) instPanel.style.display = noImage ? 'none' : '';
++
++  const recordModeRow = document.getElementById('recordModeRow');
++  if (recordModeRow) recordModeRow.style.display = (inst && inst.oneHandOnly) ? 'none' : '';
++
++  if (inst && inst.oneHandOnly && state.recordMode !== 'one') {
++    setRecordMode('one');
++  }
++}
++
+ function getActiveInst() { return INSTRUMENTS[currentInstrument]; }
+ function noteRange(idx) { return getActiveInst().getNoteRange(idx); }
+ function noteText(idx) { return getActiveInst().display[idx]; }
+@@ -74,7 +103,10 @@ function switchInstrument(instId) {
+     document.getElementById('kb-kwy').style.display = (instId === 'kwy') ? 'block' : 'none';
+     document.getElementById('kb-kmwy').style.display = (instId === 'kmwy') ? 'block' : 'none';
+     document.getElementById('kb-ranatek').style.display = (instId === 'ranatek') ? 'block' : 'none';
+-    
++    document.getElementById('kb-khluy').style.display = (instId === 'khluy') ? 'block' : 'none';
++
++    applyInstrumentUIConstraints(instId);
++
+     updatePageTitle();
+     renderNotation();
+     renderImeInfographic();

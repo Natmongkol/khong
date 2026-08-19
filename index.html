@@ -25,6 +25,7 @@
       <option value="kwy">◉ เครื่องดนตรี: ฆ้องวงใหญ่</option>
       <option value="kmwy">◉ เครื่องดนตรี: ฆ้องมอญวงใหญ่</option>
       <option value="ranatek">◉ เครื่องดนตรี: ระนาดเอก</option>
+      <option value="khluy">◉ เครื่องดนตรี: ขลุ่ยเพียงออ</option>
     </select>
   </div>
 
@@ -61,7 +62,7 @@
       <div class="ctrl-block">
         <span class="ctrl-block-label">จังหวะ</span>
         <div class="ctrl-block-body">
-          <input type="number" id="bpm" class="tempo-input" min="30" max="300" value="200" inputmode="numeric" title="Tempo (BPM)">
+          <input type="number" id="bpm" class="tempo-input" min="30" max="300" value="120" inputmode="numeric" title="Tempo (BPM): จำนวนจังหวะต่อนาที">
           <span class="control-label">bpm</span>
         </div>
       </div>
@@ -88,9 +89,13 @@
             <input type="checkbox" id="autoScrollToggle" checked style="accent-color: var(--accent); margin:0;">
             <span class="toggle-label" style="font-size: 12px;">เลื่อนตาม</span>
           </label>
-          <label class="toggle" style="cursor: pointer;" title="เสียงเคาะจังหวะที่โน้ตตัวที่ 4 ของทุกห้อง">
+          <label class="toggle" style="cursor: pointer;" title="เคาะทุกตัวโน้ตตาม BPM">
             <input type="checkbox" id="metronomeToggle" style="accent-color: var(--accent); margin:0;">
             <span class="toggle-label" style="font-size: 12px;">เคาะจังหวะ</span>
+          </label>
+          <label class="toggle" style="cursor: pointer;" title="เปิดเสียงฉิ่งตามอัตราจังหวะของแต่ละท่อน">
+            <input type="checkbox" id="chingToggle" style="accent-color: var(--accent); margin:0;">
+            <span class="toggle-label" style="font-size: 12px;">ฉิ่ง</span>
           </label>
         </div>
       </div>
@@ -137,7 +142,7 @@
 
   <div class="section-spacer"></div>
 
-  <section class="panel">
+  <section class="panel" id="instrumentPanel">
     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
       <div>
         <h2>Instrument</h2>
@@ -162,7 +167,7 @@
 
   <section class="panel">
     <h3 id="notationSubtitle" style="margin:0 0 12px;">ทางฆ้องวงใหญ่</h3>
-    <div class="record-mode-row" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+    <div class="record-mode-row" id="recordModeRow" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
       <label for="recordModeSelect" style="font-size:13px; color:var(--muted); white-space:nowrap;">โหมดบันทึกโน้ต:</label>
       <select id="recordModeSelect" class="inst-select">
         <option value="two">สองมือ</option>
@@ -416,6 +421,20 @@
         <div class="tk-note low" data-idx="0"><span class="tk-note-name">ซ</span><span class="tk-key-hint">ต่ำสุด</span></div>
         <div class="tk-note low" data-idx="1"><span class="tk-note-name">ล</span><span class="tk-key-hint">ต่ำสุด</span></div>
         <div class="tk-note low" data-idx="2"><span class="tk-note-name">ท</span><span class="tk-key-hint">ต่ำสุด</span></div>
+      </div>
+  </div>
+
+  <!-- Keyboard: ขลุ่ยเพียงออ (บันทึกมือเดียวเท่านั้น ไม่มีรูปเครื่องดนตรี) -->
+  <div id="kb-khluy" style="display:none;">
+      <div class="tk-row">
+        <div class="tk-note mid" data-idx="0"><span class="tk-note-name">ด</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="1"><span class="tk-note-name">ร</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="2"><span class="tk-note-name">ม</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="3"><span class="tk-note-name">ฟ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="4"><span class="tk-note-name">ซ</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="5"><span class="tk-note-name">ล</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note mid" data-idx="6"><span class="tk-note-name">ท</span><span class="tk-key-hint">กลาง</span></div>
+        <div class="tk-note high" data-idx="7"><span class="tk-note-name">ด</span><span class="tk-key-hint">สูง</span></div>
       </div>
   </div>
 

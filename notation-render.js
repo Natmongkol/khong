@@ -531,6 +531,7 @@ function renderNotation() {
   const frag = document.createDocumentFragment();
   const lines = Math.ceil(state.numBars / 8);
   if (!state.sections) state.sections = {};
+  if (!state.sectionTempoRates) state.sectionTempoRates = {};
   if (!state.lineLengths) state.lineLengths = {};
   
   let currentSectionStartLine = 1;
@@ -555,16 +556,23 @@ function renderNotation() {
     
     if (state.sections[lineNum] !== undefined) {
        const secName = state.sections[lineNum];
+       // มีค่าเฉพาะเมื่อบรรทัดนี้เป็นจุดที่เปลี่ยนอัตราจังหวะ
+       const secTempoRate = state.sectionTempoRates?.[lineNum] || '';
        if (state._editingSection === lineNum) {
            secHeader.innerHTML = `
               <input type="text" class="sec-input" id="secInp-${lineNum}" value="${_escHTML(secName)}" placeholder="ระบุชื่อท่อน...">
+              <label class="sec-tempo-label" for="secTempoRate-${lineNum}">อัตราจังหวะ</label>
+              <select class="sec-tempo-select" id="secTempoRate-${lineNum}">
+                <option value=""${secTempoRate === '' ? ' selected' : ''}>ใช้อัตราเดิม</option>
+                ${Object.entries(SECTION_TEMPO_RATES).map(([value, label]) => `<option value="${value}"${value === secTempoRate ? ' selected' : ''}>${label}</option>`).join('')}
+              </select>
               <button class="btn-sec save-sec">บันทึก</button>
               <button class="btn-sec cancel-sec">ยกเลิก</button>
            `;
            setTimeout(() => { const inp = document.getElementById(`secInp-${lineNum}`); if (inp) { inp.focus(); inp.select(); } }, 10);
        } else {
            secHeader.innerHTML = `
-              <div class="sec-title">${_escHTML(secName)}</div>
+              <div class="sec-title">${_escHTML(secName)}${secTempoRate ? ` <span class="sec-tempo-badge">${sectionTempoRateLabel(secTempoRate)}</span>` : ''}</div>
               <button class="btn-sec edit-sec">แก้ไขชื่อ</button>
               <button class="btn-sec del-sec">ลบ</button>
               <button class="btn-sec play-sec">เล่นท่อนนี้</button>

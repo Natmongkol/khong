@@ -45,10 +45,39 @@ const INSTRUMENTS = {
             if (idx <= 16) return 'mid';
             return 'high';
         }
+    },
+    khluy: {
+        id: 'khluy',
+        name: 'ขลุ่ยเพียงออ',
+        numGongs: 8,
+        freqs: [450, 497, 549, 606, 669, 738, 815, 900],
+        base: ['ด','ร','ม','ฟ','ซ','ล','ท','ด'],
+        display: ['ด','ร','ม','ฟ','ซ','ล','ท','ดํ'],
+        // ขลุ่ยเพียงออ: บันทึกได้แค่มือเดียว และไม่มีรูปเครื่องดนตรีให้แสดง (ดู applyInstrumentUIConstraints)
+        oneHandOnly: true,
+        noImage: true,
+        getNoteRange: (idx) => (idx === 7 ? 'high' : 'mid')
     }
 };
 
 let currentInstrument = 'kwy';
+
+// ── ข้อจำกัด UI เฉพาะเครื่อง (เช่น ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรี + บันทึกได้แค่มือเดียว) ──
+// ใช้ร่วมกันทั้งตอนสลับเครื่องปกติ (switchInstrument) และตอนโหลด/นำเข้าไฟล์ (restoreProjectData ใน io.js)
+function applyInstrumentUIConstraints(instId) {
+  const inst = INSTRUMENTS[instId];
+  const noImage = !!(inst && inst.noImage);
+
+  const instPanel = document.getElementById('instrumentPanel');
+  if (instPanel) instPanel.style.display = noImage ? 'none' : '';
+
+  const recordModeRow = document.getElementById('recordModeRow');
+  if (recordModeRow) recordModeRow.style.display = (inst && inst.oneHandOnly) ? 'none' : '';
+
+  if (inst && inst.oneHandOnly && state.recordMode !== 'one') {
+    setRecordMode('one');
+  }
+}
 
 function getActiveInst() { return INSTRUMENTS[currentInstrument]; }
 function noteRange(idx) { return getActiveInst().getNoteRange(idx); }
@@ -74,7 +103,18 @@ function switchInstrument(instId) {
     document.getElementById('kb-kwy').style.display = (instId === 'kwy') ? 'block' : 'none';
     document.getElementById('kb-kmwy').style.display = (instId === 'kmwy') ? 'block' : 'none';
     document.getElementById('kb-ranatek').style.display = (instId === 'ranatek') ? 'block' : 'none';
-    
+    document.getElementById('kb-khluy').style.display = (instId === 'khluy') ? 'block' : 'none';
+
+    applyInstrumentUIConstraints(instId);
+
+    // เริ่มโหลดเสียงขลุ่ยจริงล่วงหน้า เพื่อให้พร้อมทันทีที่กดเล่นโน้ตแรก
+    if (instId === 'khluy' && typeof ensureKhluySamples === 'function') {
+      ensureKhluySamples().catch((error) => {
+        console.error('โหลดเสียงขลุ่ยไม่สำเร็จ:', error);
+        showToast('โหลดเสียงขลุ่ยไม่สำเร็จ โปรดตรวจสอบไฟล์เสียง', 'error');
+      });
+    }
+
     updatePageTitle();
     renderNotation();
     renderImeInfographic();
@@ -155,10 +195,32 @@ const BARS_PER_VAK = 8;
 // ไม่มีเพดานจำนวนวรรคจากตัวแอปเอง; ขีดจำกัดจริงขึ้นกับหน่วยความจำของเบราว์เซอร์และเครื่องผู้ใช้
 const MAX_VAKS = Number.MAX_SAFE_INTEGER;
 
+const SECTION_TEMPO_RATES = {
+  'sam-chan': 'สามชั้น',
+  'song-chan': 'สองชั้น',
+  'chan-diao': 'ชั้นเดียว'
+};
+const DEFAULT_SECTION_TEMPO_RATE = 'sam-chan';
+
+function sectionTempoRateLabel(rate) {
+  return SECTION_TEMPO_RATES[rate] || SECTION_TEMPO_RATES[DEFAULT_SECTION_TEMPO_RATE];
+}
+
+// หาอัตราจังหวะที่มีผล ณ บรรทัดนั้น: ใช้ค่าที่กำหนดล่าสุดก่อนหน้า
+// หากยังไม่เคยกำหนดเลย ใช้สามชั้นเป็นค่าเริ่มต้นภายใน (โดยไม่แสดงป้ายกำกับ)
+function effectiveSectionTempoRate(lineNum) {
+  let rate = DEFAULT_SECTION_TEMPO_RATE;
+  const changes = state.sectionTempoRates || {};
+  Object.keys(changes).map(Number).sort((a, b) => a - b).forEach((line) => {
+    if (line <= lineNum && SECTION_TEMPO_RATES[changes[line]]) rate = changes[line];
+  });
+  return rate;
+}
+
 const state = {
-  songName: '', hand: 'right', bpm: 200, numBars: 8, cursorBeat: -1,
+  songName: '', hand: 'right', bpm: 120, numBars: 8, cursorBeat: -1,
   isRecording: true, isPlaying: false, playStart: 0, currentBeat: -1,
-  notes: { right: [], left: [] }, clipboardVak: null, repeats: {}, sections: {}, lineLengths: {},
+  notes: { right: [], left: [] }, clipboardVak: null, repeats: {}, sections: {}, sectionTempoRates: {}, lineLengths: {},
   recordMode: 'two', // 'two' = สองมือ (default, พฤติกรรมเดิม) | 'one' = มือเดียว (ใช้เฉพาะแถว right)
   playMode: 'all', selectionHands: ['right', 'left'], _editingSection: null,
   isEditMode: false, isMultiSelectMode: false, selectedRooms: new Set(), currentPlayingLine: null,
@@ -186,7 +248,7 @@ function _snapMeta(includeDocument = false) {
   const meta = {
     instrument: currentInstrument, recordMode: state.recordMode,
     cursorBeat: state.cursorBeat, hand: state.hand, numBars: state.numBars,
-    repeats: {...state.repeats}, sections: {...state.sections}, lineLengths: {...state.lineLengths}
+    repeats: {...state.repeats}, sections: {...state.sections}, sectionTempoRates: {...state.sectionTempoRates}, lineLengths: {...state.lineLengths}
   };
   if (includeDocument) { meta.songName = state.songName; meta.bpm = state.bpm; }
   return meta;
@@ -252,6 +314,11 @@ function restoreSnapshot(snap) {
       document.getElementById('kb-kwy').style.display = (snap.instrument === 'kwy') ? 'block' : 'none';
       document.getElementById('kb-kmwy').style.display = (snap.instrument === 'kmwy') ? 'block' : 'none';
       document.getElementById('kb-ranatek').style.display = (snap.instrument === 'ranatek') ? 'block' : 'none';
+      document.getElementById('kb-khluy').style.display = (snap.instrument === 'khluy') ? 'block' : 'none';
+      applyInstrumentUIConstraints(snap.instrument);
+      if (snap.instrument === 'khluy' && typeof ensureKhluySamples === 'function') {
+        ensureKhluySamples().catch((error) => console.error('โหลดเสียงขลุ่ยไม่สำเร็จ:', error));
+      }
       
       renderImeInfographic();
       renderGongs();
@@ -273,6 +340,7 @@ function restoreSnapshot(snap) {
 
   state.cursorBeat = snap.cursorBeat; state.hand = snap.hand;
   state.repeats = snap.repeats || {}; state.sections = snap.sections || {};
+  state.sectionTempoRates = snap.sectionTempoRates || {};
   state.lineLengths = snap.lineLengths || {};
   state.recordMode = snap.recordMode || 'two';
   applyRecordModeUI(state.recordMode);
@@ -338,7 +406,7 @@ function buildSaveData() {
     songName: state.songName, 
     tempo: state.bpm, 
     vak: state.numBars / BARS_PER_VAK,
-    repeats: state.repeats || {}, sections: state.sections || {}, lineLengths: state.lineLengths || {}, 
+    repeats: state.repeats || {}, sections: state.sections || {}, sectionTempoRates: state.sectionTempoRates || {}, lineLengths: state.lineLengths || {}, 
     notes: state.recordMode === 'one'
       ? { right: [...state.notes.right] }
       : { right: [...state.notes.right], left: [...state.notes.left] }, 
