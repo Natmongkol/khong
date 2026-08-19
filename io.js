@@ -432,6 +432,13 @@ const PDF_IMPORT = (() => {
 
     if (globalMaxX <= globalMinX) { globalMinX = 50; globalMaxX = 500; }
     const colSpacing = (globalMaxX - globalMinX) / 7;
+    // ระยะยอมรับนอกขอบตาราง (ครึ่งคอลัมน์) กันเคสตัวอักษรเยื้องขอบเล็กน้อยจากการวัดตำแหน่งไม่เป๊ะ
+    // แต่ตัวอักษรที่อยู่นอกตารางจริง ๆ (เกินระยะนี้) จะถูกตัดทิ้ง ไม่ยัดใส่ช่องริมตาราง
+    const xTolerance = colSpacing / 2;
+    const xMin = globalMinX - xTolerance;
+    const xMax = globalMaxX + xTolerance;
+
+    const isOneHand = state.recordMode === 'one';
 
     let pendingSection = null;
     let i = 0;
@@ -443,10 +450,14 @@ const PDF_IMPORT = (() => {
       if (a.isSectionCandidate) { pendingSection = a.text; i++; continue; }
 
       if (a.isNoteRow) {
+        // โหมดมือเดียว: แต่ละบรรทัดโน้ตคือหนึ่งวรรค อ่านเฉพาะมือขวา ไม่มองหาบรรทัดถัดไปมาจับคู่เป็นมือซ้าย
+        // (การมองหาบรรทัดคู่แบบเดิมทำให้ดึงข้อความอื่นที่ไม่เกี่ยวมาปนเป็นมือซ้าย ทำให้โน้ตเพี้ยน/ไม่ตรง)
         let botIdx = -1;
-        for (let j = i + 1; j < Math.min(i + 4, annotated.length); j++) {
-          if (annotated[j].isNoteRow) { botIdx = j; break; }
-          if (annotated[j].isSectionCandidate || annotated[j].isRepeat) break;
+        if (!isOneHand) {
+          for (let j = i + 1; j < Math.min(i + 4, annotated.length); j++) {
+            if (annotated[j].isNoteRow) { botIdx = j; break; }
+            if (annotated[j].isSectionCandidate || annotated[j].isRepeat) break;
+          }
         }
 
         const BEATS = 32;
@@ -456,6 +467,9 @@ const PDF_IMPORT = (() => {
         const fillSpatial = (items, targetArr) => {
             const measures = Array.from({length: 8}, () => []);
             items.forEach(it => {
+                // อ่านเฉพาะตัวอักษรที่อยู่ในขอบเขตตาราง (แนว x ของแถวโน้ตจริง) เท่านั้น
+                // ตัวอักษรที่อยู่นอกตาราง (เกินขอบซ้าย/ขวา) จะถูกข้าม ไม่ถูกยัดใส่ช่องริมตาราง
+                if (it.x < xMin || it.x > xMax) return;
                 let colIdx = Math.round((it.x - globalMinX) / colSpacing);
                 if (colIdx < 0) colIdx = 0;
                 if (colIdx > 7) colIdx = 7;
@@ -488,7 +502,7 @@ const PDF_IMPORT = (() => {
         result.vaks.push({
           section: pendingSection,
           right: topArr,
-          left: botArr,
+          left: isOneHand ? new Array(BEATS).fill(null) : botArr,
           repeat: false 
         });
         
@@ -524,6 +538,10 @@ const PDF_IMPORT = (() => {
     state.notes.right.fill(null);
     state.notes.left.fill(null);
 
+    // เคารพโหมดบันทึกโน้ตปัจจุบัน (มือเดียว/สองมือ) — ถ้าเป็นมือเดียว ไม่เติมข้อมูลมือซ้ายเข้าไปเลย
+    // แม้ข้อมูลที่ parse มาจะมีแถวมือซ้ายติดมาด้วยก็ตาม (กันกรณีเผลอ import ทับ)
+    const isOneHand = state.recordMode === 'one';
+
     const BEATS = BARS_PER_VAK * BEATS_PER_BAR; 
     parsed.vaks.forEach((vak, vi) => {
       const lineNum = vi + 1;
@@ -532,8 +550,12 @@ const PDF_IMPORT = (() => {
       if (vak.section) state.sections[lineNum] = vak.section;
 
       vak.right.forEach((n, bi) => { state.notes.right[offset + bi] = n; });
-      vak.left .forEach((n, bi) => { state.notes.left [offset + bi] = n; });
+      if (!isOneHand) {
+        vak.left.forEach((n, bi) => { state.notes.left[offset + bi] = n; });
+      }
     });
+
+    if (isOneHand) { state.notes.left.fill(null); state.hand = 'right'; }
 
     state.cursorBeat = 0;
     if (typeof chordTimer !== 'undefined' && chordTimer) { clearTimeout(chordTimer); chordTimer = null; }
@@ -551,6 +573,7 @@ const PDF_IMPORT = (() => {
     if (parsed.vaks.length === 0) return '<span style="color:var(--red)">ไม่พบโน้ต</span>';
 
     const displayNotes = getActiveInst().display;
+    const isOneHand = state.recordMode === 'one';
     const MAX_PREVIEW = 4;
     let html = '';
 
@@ -564,8 +587,10 @@ const PDF_IMPORT = (() => {
       }
       const toStr = arr => arr.map(n => n === null || !displayNotes[n] ? '-' : displayNotes[n]).join(' ');
       html += `<div style="color:var(--muted);font-size:11px;">วรรค ${vi+1}</div>`;
-      html += `<div style="color:var(--gold)">R: ${toStr(vak.right)}</div>`;
-      html += `<div style="color:var(--accent)">L: ${toStr(vak.left)}</div>`;
+      html += `<div style="color:var(--gold)">${isOneHand ? '' : 'R: '}${toStr(vak.right)}</div>`;
+      if (!isOneHand) {
+        html += `<div style="color:var(--accent)">L: ${toStr(vak.left)}</div>`;
+      }
     });
 
     if (parsed.vaks.length > MAX_PREVIEW) {
