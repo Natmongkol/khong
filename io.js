@@ -35,6 +35,10 @@ function restoreProjectData(data, preserveUndo = false) {
   updatePageTitle();
 
   if (Number.isFinite(data.tempo)) { state.bpm = Math.max(30, Math.min(300, data.tempo)); document.getElementById('bpm').value = state.bpm; }
+  applyTuning(data.tuning);
+  updateTuningUI();
+  renderGongs(); renderImeInfographic();
+  if (typeof refreshTouchKeyboardLabels === 'function') refreshTouchKeyboardLabels();
   const noteLength = Array.isArray(data.notes?.right) ? data.notes.right.length : 0;
   const requestedVak = Number.isFinite(data.vak) ? data.vak : Math.ceil(noteLength / 32);
   const vak = Math.max(1, Math.min(MAX_VAKS, Math.round(requestedVak || 1)));
@@ -93,7 +97,7 @@ function restoreProjectData(data, preserveUndo = false) {
 function exportPDF() {
   if (chordTimer) { clearTimeout(chordTimer); commitChord(); }
 
-  const displayNotes = getActiveInst().display;
+  const displayNotes = notationDisplay();
   
   function noteHTML(idx) {
     if (idx === null || idx === undefined || !displayNotes[idx]) return '<span class="rest">-</span>';
@@ -272,12 +276,12 @@ const PDF_IMPORT = (() => {
   function tokenToIndex(tok) {
     if (REST_TOKENS.has(tok)) return null;
     let lookUpTok = FALLBACK_NOTES[tok] || tok;
-    const idx = getActiveInst().display.indexOf(lookUpTok);
+    const idx = notationDisplay().indexOf(lookUpTok);
     if (idx !== -1) return idx;
     
     // Fallback: strip dots and try again
     const baseNote = lookUpTok.replace(/[ฺํ]/g, '');
-    const baseIdx = getActiveInst().display.indexOf(baseNote);
+    const baseIdx = notationDisplay().indexOf(baseNote);
     return baseIdx !== -1 ? baseIdx : null;
   }
 
@@ -572,7 +576,7 @@ const PDF_IMPORT = (() => {
   function buildPreview(parsed) {
     if (parsed.vaks.length === 0) return '<span style="color:var(--red)">ไม่พบโน้ต</span>';
 
-    const displayNotes = getActiveInst().display;
+    const displayNotes = notationDisplay();
     const isOneHand = state.recordMode === 'one';
     const MAX_PREVIEW = 4;
     let html = '';

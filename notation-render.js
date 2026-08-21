@@ -365,6 +365,12 @@ let _patchPrevNotes = null; // snapshot ก่อนหน้า { right: [...],
 let _patchPrevCursor = -2;  // cursorBeat ก่อนหน้า
 let _patchPrevHand = null;  // hand ก่อนหน้า
 let _patchPrevEditMode = null;
+
+function beatNoteHTML(hand, beat) {
+  const main = state.notes[hand][beat];
+  if (main == null) return '−';
+  return noteHTML(main);
+}
 let _cursorScrollFrame = null;
 let _pendingCursorElement = null;
 
@@ -481,7 +487,7 @@ function patchNotation(changedBeats = null) {
       const gongIdx = state.notes[h][globalBeat];
       // content
       if (gongIdx != null) {
-        cell.innerHTML = noteHTML(gongIdx);
+        cell.innerHTML = beatNoteHTML(h, globalBeat);
         cell.className = 'beat-cell ' + noteRange(gongIdx);
       } else {
         cell.textContent = '−';
@@ -678,7 +684,7 @@ function renderNotation() {
           const globalBeat = b * BEATS_PER_BAR + beat; const cell = document.createElement('div'); cell.className = 'beat-cell';
           const gongIdx = state.notes[hand][globalBeat];
           
-          if (gongIdx != null) { cell.innerHTML = noteHTML(gongIdx); cell.classList.add(noteRange(gongIdx)); } 
+          if (gongIdx != null) { cell.innerHTML = beatNoteHTML(hand, globalBeat); cell.classList.add(noteRange(gongIdx)); } 
           else { cell.textContent = '−'; cell.classList.add('empty'); }
 
           if (hand === state.hand && globalBeat === state.cursorBeat && state.isEditMode) {

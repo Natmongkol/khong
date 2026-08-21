@@ -54,6 +54,7 @@ button, input, select, .gong, .toggle {
   display: inline-block;
   max-width: 100%;
 }
+.tuning-select { min-width: 178px; }
 .inst-select:hover {
   border-color: var(--accent);
   background-color: var(--panel-3);

@@ -62,6 +62,62 @@ const INSTRUMENTS = {
 
 let currentInstrument = 'kwy';
 
+// ทางเสียงเปลี่ยนเฉพาะชื่อโน้ตที่ผูกกับลูก/แป้นเดิม ไม่เปลี่ยนความถี่จริงหรือข้อมูลโน้ตที่บันทึกไว้
+const TUNING_MODES = { 'peang-or-bon': 'เครื่องสาย (ทางเพียงออบน)', nok: 'ปี่พาทย์ (ทางนอก)' };
+const TUNING_INSTRUMENTS = new Set(['kwy', 'ranatek']);
+const _standardNoteLabels = {
+  kwy: { base: [...INSTRUMENTS.kwy.base], display: [...INSTRUMENTS.kwy.display] },
+  ranatek: { base: [...INSTRUMENTS.ranatek.base], display: [...INSTRUMENTS.ranatek.display] }
+};
+
+function applyTuning(mode = state.tuning) {
+  if (!TUNING_MODES[mode]) mode = 'peang-or-bon';
+  state.tuning = mode;
+  for (const instId of TUNING_INSTRUMENTS) {
+    const inst = INSTRUMENTS[instId];
+    const standard = _standardNoteLabels[instId];
+    if (mode === 'peang-or-bon') {
+      inst.base = [...standard.base]; inst.display = [...standard.display];
+      continue;
+    }
+    // ทางนอก: ย้ายตำแหน่ง "ด" ขึ้นหนึ่งลูก (ฆ้อง: 6/13 → 7/14)
+    // และเรียงโน้ตอื่นลดหลั่นตามตำแหน่งจริงของลูกเครื่อง
+    const scale = ['ด', 'ร', 'ม', 'ฟ', 'ซ', 'ล', 'ท'];
+    inst.base = standard.base.map(note => scale[(scale.indexOf(note) + 6) % 7]);
+    if (instId === 'kwy') {
+      inst.display = inst.base.map((note, idx) => idx <= 5 ? `${note}ฺ` : idx >= 13 ? `${note}ํ` : note);
+    } else {
+      inst.display = inst.base.map((note, idx) => idx <= 3 ? `${note}ฺฺ` : idx <= 10 ? `${note}ฺ` : idx >= 18 ? `${note}ํ` : note);
+    }
+  }
+}
+
+function updateTuningUI() {
+  const sel = document.getElementById('tuningSelect');
+  if (!sel) return;
+  const supported = TUNING_INSTRUMENTS.has(currentInstrument);
+  sel.style.display = supported ? '' : 'none';
+  sel.value = state.tuning || 'peang-or-bon';
+}
+
+function setTuning(mode) {
+  if (!TUNING_INSTRUMENTS.has(currentInstrument) || !TUNING_MODES[mode] || mode === state.tuning) return;
+  pushUndo();
+  applyTuning(mode);
+  updateTuningUI();
+  renderGongs(); renderNotation(); renderImeInfographic();
+  if (typeof refreshTouchKeyboardLabels === 'function') refreshTouchKeyboardLabels();
+  scheduleAutosave();
+}
+
+function keyboardIndexForCode(instId, code) {
+  const standard = _standardNoteLabels[instId];
+  const inst = INSTRUMENTS[instId];
+  if (!standard || !inst?.keyCodes) return -1;
+  // ผังคีย์บอร์ดคงตำแหน่งเดิมเสมอ ไม่ย้ายตามทางเสียง
+  return inst.keyCodes.findIndex((key) => Array.isArray(key) ? key.includes(code) : key === code);
+}
+
 // ── ข้อจำกัด UI เฉพาะเครื่อง (เช่น ขลุ่ยเพียงออ: ไม่มีรูปเครื่องดนตรี + บันทึกได้แค่มือเดียว) ──
 // ใช้ร่วมกันทั้งตอนสลับเครื่องปกติ (switchInstrument) และตอนโหลด/นำเข้าไฟล์ (restoreProjectData ใน io.js)
 function applyInstrumentUIConstraints(instId) {
@@ -77,12 +133,16 @@ function applyInstrumentUIConstraints(instId) {
   if (inst && inst.oneHandOnly && state.recordMode !== 'one') {
     setRecordMode('one');
   }
+  updateTuningUI();
 }
 
 function getActiveInst() { return INSTRUMENTS[currentInstrument]; }
 function noteRange(idx) { return getActiveInst().getNoteRange(idx); }
-function noteText(idx) { return getActiveInst().display[idx]; }
-function noteBaseText(idx) { return getActiveInst().base[idx]; }
+// ทางเสียงมีผลต่อโน้ตที่บันทึก ตาราง และการส่งออกด้วย เพื่อให้เปลี่ยนทางแล้วเห็นผลทันที
+function notationDisplay() { return getActiveInst().display; }
+function notationBase() { return getActiveInst().base; }
+function noteText(idx) { return notationDisplay()[idx]; }
+function noteBaseText(idx) { return notationBase()[idx]; }
 function noteHTML(idx) { return `<span class="nn nn-${noteRange(idx)}">${noteBaseText(idx)}</span>`; }
 
 function switchInstrument(instId) {
@@ -106,6 +166,7 @@ function switchInstrument(instId) {
     document.getElementById('kb-khluy').style.display = (instId === 'khluy') ? 'block' : 'none';
 
     applyInstrumentUIConstraints(instId);
+    applyTuning(state.tuning);
 
     // เริ่มโหลดเสียงขลุ่ยจริงล่วงหน้า เพื่อให้พร้อมทันทีที่กดเล่นโน้ตแรก
     if (instId === 'khluy' && typeof ensureKhluySamples === 'function') {
@@ -119,6 +180,7 @@ function switchInstrument(instId) {
     renderNotation();
     renderImeInfographic();
     renderGongs(); // วาดลูกฆ้องใหม่เสมอ ไม่ว่าจะเลือกวงใด
+    if (typeof refreshTouchKeyboardLabels === 'function') refreshTouchKeyboardLabels();
     scheduleAutosave();
 }
 
@@ -220,7 +282,7 @@ function effectiveSectionTempoRate(lineNum) {
 const state = {
   songName: '', hand: 'right', bpm: 120, numBars: 8, cursorBeat: -1,
   isRecording: true, isPlaying: false, playStart: 0, currentBeat: -1,
-  notes: { right: [], left: [] }, clipboardVak: null, repeats: {}, sections: {}, sectionTempoRates: {}, lineLengths: {},
+  notes: { right: [], left: [] }, clipboardVak: null, repeats: {}, sections: {}, sectionTempoRates: {}, lineLengths: {}, tuning: 'peang-or-bon',
   recordMode: 'two', // 'two' = สองมือ (default, พฤติกรรมเดิม) | 'one' = มือเดียว (ใช้เฉพาะแถว right)
   playMode: 'all', selectionHands: ['right', 'left'], _editingSection: null,
   isEditMode: false, isMultiSelectMode: false, selectedRooms: new Set(), currentPlayingLine: null,
@@ -248,7 +310,7 @@ function _snapMeta(includeDocument = false) {
   const meta = {
     instrument: currentInstrument, recordMode: state.recordMode,
     cursorBeat: state.cursorBeat, hand: state.hand, numBars: state.numBars,
-    repeats: {...state.repeats}, sections: {...state.sections}, sectionTempoRates: {...state.sectionTempoRates}, lineLengths: {...state.lineLengths}
+    repeats: {...state.repeats}, sections: {...state.sections}, sectionTempoRates: {...state.sectionTempoRates}, lineLengths: {...state.lineLengths}, tuning: state.tuning
   };
   if (includeDocument) { meta.songName = state.songName; meta.bpm = state.bpm; }
   return meta;
@@ -333,13 +395,16 @@ function restoreSnapshot(snap) {
   ensureCapacity(); // ต้องเรียกก่อน apply ค่าโน้ต กัน idx เกินขอบเขตกรณี numBars เปลี่ยน
 
   if (snap.delta) {
-    for (const c of snap.cells) state.notes[c.hand][c.idx] = c.val;
+    for (const c of snap.cells) { state.notes[c.hand][c.idx] = c.val; }
   } else {
     state.notes.right = snap.right; state.notes.left = snap.left;
   }
 
   state.cursorBeat = snap.cursorBeat; state.hand = snap.hand;
   state.repeats = snap.repeats || {}; state.sections = snap.sections || {};
+  applyTuning(snap.tuning);
+  updateTuningUI();
+  renderGongs(); renderImeInfographic();
   state.sectionTempoRates = snap.sectionTempoRates || {};
   state.lineLengths = snap.lineLengths || {};
   state.recordMode = snap.recordMode || 'two';
@@ -355,6 +420,7 @@ function restoreSnapshot(snap) {
   hideCellMenus();
   
   ensureCapacity(); renderNotation();
+  if (typeof refreshTouchKeyboardLabels === 'function') refreshTouchKeyboardLabels();
 }
 
 function updateUndoUI() {
@@ -406,7 +472,7 @@ function buildSaveData() {
     songName: state.songName, 
     tempo: state.bpm, 
     vak: state.numBars / BARS_PER_VAK,
-    repeats: state.repeats || {}, sections: state.sections || {}, sectionTempoRates: state.sectionTempoRates || {}, lineLengths: state.lineLengths || {}, 
+    repeats: state.repeats || {}, sections: state.sections || {}, sectionTempoRates: state.sectionTempoRates || {}, lineLengths: state.lineLengths || {}, tuning: state.tuning,
     notes: state.recordMode === 'one'
       ? { right: [...state.notes.right] }
       : { right: [...state.notes.right], left: [...state.notes.left] }, 

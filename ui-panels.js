@@ -178,6 +178,12 @@ function initTouchKeyboard() {
   document.getElementById('tkEnter').addEventListener('pointerdown', (e) => { e.preventDefault(); appendNewVak(); });
 }
 
+// ปุ่มสัมผัสใช้ data-idx อ้างลูกเครื่องจริง และคงป้ายเดิมทุกทางเสียง
+function refreshTouchKeyboardLabels() {
+  // ปุ่มสัมผัสคงป้ายและตำแหน่งเดิมตามผังคีย์บอร์ดที่ผู้ใช้คุ้นเคย
+  if (typeof _rebuildGongCache === 'function') _rebuildGongCache();
+}
+
 function renderImeInfographic() {
   const target = document.getElementById('imeInfographic');
   if (!target) return;
@@ -199,7 +205,7 @@ function renderImeInfographic() {
             const key = inst.keyLabels[idx];
             html += `<div class="ime-key ${rangeClass}">
                         <span class="ime-char">${key}</span>
-                        <span class="ime-note">${inst.display[idx]}</span>
+                        <span class="ime-note">${_standardNoteLabels.ranatek.display[idx]}</span>
                      </div>`;
         });
         html += '</div>';

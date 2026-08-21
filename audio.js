@@ -961,7 +961,7 @@ async function exportMP3(customSeq = null, suffix = '') {
       for (const hand of (isKhluy ? ['right'] : ['right', 'left'])) {
         const g = state.notes[hand][beat];
         if (g != null) {
-            uniqueGongs.add(g);
+          uniqueGongs.add(g);
             
             // [เพิ่มใหม่] ดึงโน้ตคู่แปดมาระบุเพื่อสร้าง Buffer ไว้ล่วงหน้า
             if (state.recordMode === 'one' && currentInstrument === 'ranatek' && hand === 'right') {
@@ -1048,12 +1048,13 @@ async function exportMP3(customSeq = null, suffix = '') {
             if (lowerGong >= 0) gongsToRender.push(lowerGong);
           }
           for (const gong of gongsToRender) {
+            const noteTime = relativeTime;
             const src = offlineCtx.createBufferSource();
             src.buffer = gongBuffers[gong];
             if (isKhluy) {
               const level = offlineCtx.createGain();
-              const startAt = Math.max(0, relativeTime);
-              const offset = Math.max(0, -relativeTime);
+              const startAt = Math.max(0, noteTime);
+              const offset = Math.max(0, -noteTime);
               const duration = Math.min(
                 src.buffer.duration - offset,
                 khluyNoteDuration() - offset
@@ -1071,8 +1072,8 @@ async function exportMP3(customSeq = null, suffix = '') {
               previousKhluyExportVoice = { source: src, level, ctx: offlineCtx };
             } else {
               src.connect(exportBus);
-              if (relativeTime < 0) src.start(0, -relativeTime);
-              else src.start(relativeTime);
+              if (noteTime < 0) src.start(0, -noteTime);
+              else src.start(noteTime);
             }
           }
         }

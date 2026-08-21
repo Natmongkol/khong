@@ -13,6 +13,10 @@ function init() {
   renderImeInfographic();
 
   applyRecordModeUI(state.recordMode);
+  applyTuning(state.tuning);
+  updateTuningUI();
+  refreshTouchKeyboardLabels();
+  document.getElementById('tuningSelect')?.addEventListener('change', (e) => setTuning(e.target.value));
   const qnavTipInit = document.getElementById('qnavTooltip');
   if (qnavTipInit) qnavTipInit.textContent = `ไปดู${getActiveInst().name}`;
   initTopControls();
@@ -660,7 +664,6 @@ function initCellAndLineMenus() {
   document.getElementById('camPlay')?.addEventListener('click', (e) => { e.preventDefault(); playCurrentRoom(); });
   document.getElementById('camCopy')?.addEventListener('click', (e) => { e.preventDefault(); copyRoom(); });
   document.getElementById('camPaste')?.addEventListener('click', (e) => { e.preventDefault(); pasteRoom(); });
-  
   document.getElementById('camIncBar')?.addEventListener('click', (e) => {
       e.preventDefault();
       if (state.cursorBeat !== -1) {
@@ -770,7 +773,7 @@ function initCellAndLineMenus() {
       });
       customClipboard = { type: 'multiLine', data: { right: allRight, left: allLeft }, length: allRight.length, lineCount: sorted.length, originalHand: 'both' };
       // Also copy as text to system clipboard if supported
-      const displayNotes = getActiveInst ? getActiveInst().display : null;
+      const displayNotes = typeof notationDisplay === 'function' ? notationDisplay() : (getActiveInst ? getActiveInst().display : null);
       if (navigator.clipboard && displayNotes) {
           const toStr = arr => arr.map(n => n === null || !displayNotes[n] ? '-' : displayNotes[n]).join(' ');
           const lines = sorted.map((lineNum, i) => {
@@ -1160,13 +1163,6 @@ function initGlobalPointerAndKeyboard() {
     'KeyZ':'ดฺ', 'KeyX':'รฺ', 'KeyC':'มฺ', 'KeyV':'ฟฺ', 'KeyB':'ซฺ', 'KeyN':'ลฺ', 'KeyM':'ทฺ'
   };
 
-  // ระนาดเอก: ผังคีย์ลัดของตัวเอง (22 ลูก เรียงต่างจากฆ้อง) — สร้างจาก INSTRUMENTS.ranatek.keyCodes ครั้งเดียว
-  const RANATEK_CODE_MAP = {};
-  (INSTRUMENTS.ranatek.keyCodes || []).forEach((k, idx) => {
-    if (Array.isArray(k)) k.forEach(code => { RANATEK_CODE_MAP[code] = idx; });
-    else RANATEK_CODE_MAP[k] = idx;
-  });
-  
   const pressedCodes = new Set();
   
   function updateModUIState() {
@@ -1233,11 +1229,12 @@ function initGlobalPointerAndKeyboard() {
     if (pressedCodes.has(code)) return; 
     
     if (currentInstrument === 'ranatek') {
-        if (RANATEK_CODE_MAP[code] !== undefined) {
+        const ranatekIdx = keyboardIndexForCode('ranatek', code);
+        if (ranatekIdx !== -1) {
             e.preventDefault();
             unlockAudio();
             pressedCodes.add(code);
-            typeNote(RANATEK_CODE_MAP[code]);
+            typeNote(ranatekIdx);
             return;
         }
     } else if (CODE_MAP_MASTER[code] !== undefined) { 
@@ -1245,8 +1242,8 @@ function initGlobalPointerAndKeyboard() {
         unlockAudio(); 
         pressedCodes.add(code); 
         const noteStr = CODE_MAP_MASTER[code];
-        const inst = getActiveInst();
-        const idx = inst.display.indexOf(noteStr);
+        const keyboardNotes = _standardNoteLabels[currentInstrument]?.display || getActiveInst().display;
+        const idx = keyboardNotes.indexOf(noteStr);
         if (idx !== -1) {
             typeNote(idx);
         }
